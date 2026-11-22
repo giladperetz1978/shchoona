@@ -30,7 +30,7 @@ export function createGame(difficulty = "relaxed", rival = false) {
     energy: 85, food: 75, happiness: 40, education: 0, lessons: 0, experience: 0,
     job: null, location: "home", inventory: { laptop: false, bike: false, groceries: 2 },
     housing: "basic", rent: 450, economy: 1, rivalProgress: 0, won: false,
-    encounters: {}, cafeOrder: null, cafeServed: 0,
+    encounters: {}, cafeOrder: null, cafeServed: 0, courier: null,
     log: ["ברוכים הבאים לשכונה! כדאי להתחיל בקפה פינה: להגיש מועמדות ולעבוד במשמרת הראשונה."]
   };
 }
@@ -101,7 +101,7 @@ export function actionsFor(s, place = s.location) {
     add("community", "ארוחה קהילתית", "השכונה דואגת לך כשאין מספיק אוכל", 3, 0, { food: 35, happiness: 3 }, s.food >= 15 ? "זמינה כשמדד השובע נמוך מ־15" : "");
     add("walk", "טיול בפארק", "רגע ירוק, בלי לשלם", 2, 0, { happiness: 10, energy: 8 });
     add("picnic", "פיקניק עם חברים", "מנה מהתיק, זמן טוב בחוץ", 3, 0, { happiness: 20, food: 30 }, !s.inventory.groceries ? "צריך מנה של מצרכים" : "");
-    add("gig", "לצאת למשלוחים", "גמישות של כלכלת החלטורה: 220 ₪ לסבב", 3, -220, { energy: -22 }, !s.inventory.bike ? "צריך אופניים מחנות עדכני" : "");
+    add("gig", "לקבל משלוח", `איסוף בקפה פינה ומסירה ב${courierDestination(s).name} תוך 60 שניות · 220 ₪ במסירה בזמן`, 3, 0, { energy: -22 }, !s.inventory.bike ? "צריך אופניים מחנות עדכני" : "");
   }
   if (place === "gym") {
     add("exercise", "אימון בסטודיו", "משחרר את הראש ומחזיר אנרגיה", 2, price(45), { energy: 25, happiness: 10 });
@@ -120,6 +120,7 @@ export function actionsFor(s, place = s.location) {
 }
 
 export function unavailable(s, action) {
+  if (s.courier) return "צריך לסיים קודם את המשלוח.";
   if (s.won) return "המסלול הושלם! אפשר להתחיל משחק חדש.";
   if (s.cafeOrder) return "קודם צריך להגיש את ההזמנה שמחכה במכונת הקפה.";
   if (action.requirement) return action.requirement;
@@ -136,7 +137,7 @@ function record(s, message) {
   return { state: s, message };
 }
 
-export function perform(state, id) {
+export function perform(state, id, now = Date.now()) {
   const action = actionsFor(state).find(a => a.id === id);
   if (!action) return { state, error: "הפעולה אינה זמינה במקום הזה." };
   const error = unavailable(state, action);
@@ -148,7 +149,8 @@ export function perform(state, id) {
   for (const [key, value] of Object.entries(action.effects)) s[key] = clamp(s[key] + value);
   let message = `${action.title} · ${duration(action.hours)}${action.cost ? ` · ${action.cost > 0 ? "שולם" : "התקבל"} ${money(Math.abs(action.cost))}` : ""}`;
   if (id.startsWith("apply-")) s.job = id.slice(6);
-  if (["work", "remote", "freelance", "gig"].includes(id)) s.experience += action.hours;
+  if (["work", "remote", "freelance"].includes(id)) s.experience += action.hours;
+  if (id === "gig") s.courier = { x: 2, y: 4, angle: 0, speed: 0, picked: false, deadline: now + 60000, stop: courierStops.indexOf(courierDestination(state)) };
   if (["study", "online"].includes(id)) {
     s.lessons++;
     if (s.lessons === 4) {
@@ -177,6 +179,37 @@ export function perform(state, id) {
   return record(s, message);
 }
 
+const courierStops = [{ name: "שער הקמפוס", x: 5.7, y: 3.76 }, { name: "סטודיו תנועה", x: 4.24, y: 2.55 }, { name: "מרחב העבודה", x: 5.4, y: 2.24 }];
+const courierDestination = s => courierStops[(s.week + Math.floor(s.hours / 3)) % courierStops.length];
+export const courierTarget = order => order.picked ? courierStops[order.stop] : { name: "קפה פינה", x: 2.17, y: .03 };
+export function handoffStatus(order) {
+  const target = courierTarget(order);
+  if (Math.hypot(order.x-target.x,order.y-target.y) > .27) return "far";
+  return Math.abs(order.speed) > .07 ? "brake" : "ready";
+}
+const curb = .30;
+const crossStreet = n => Math.abs(n - 2 * Math.round(n / 2)) <= curb;
+const onStreet = (x, y) => x >= -curb && x <= 6 + curb && y >= -curb && y <= 4 + curb && (crossStreet(x) || crossStreet(y));
+
+export function ride(state, command, now = Date.now()) {
+  const order = state.courier;
+  if (!order) return { state, error: "אין משלוח פעיל." };
+  if (now >= order.deadline || command === "cancel") {
+    return record({ ...state, courier: null }, now >= order.deadline ? "הזמן נגמר. המשלוח נסגר ללא שכר." : "המשלוח בוטל ללא שכר.");
+  }
+  const { dt, steer, throttle } = command;
+  if (!(dt >= 0 && dt <= .1) || ![-1,0,1].includes(steer) || ![-1,0,1].includes(throttle)) return { state, error: "פקודת רכיבה אינה תקינה." };
+  const angle = (order.angle + steer * dt * 2.25) % (2 * Math.PI);
+  let speed = clamp(order.speed + (throttle > 0 ? .65 : throttle < 0 ? -2.1 : -Math.sign(order.speed) * .45) * dt, 0, .77);
+  if (!throttle && Math.sign(speed) !== Math.sign(order.speed)) speed = 0;
+  let x = order.x + Math.sin(angle) * speed * dt, y = order.y - Math.cos(angle) * speed * dt;
+  if (!onStreet(x, y)) { x = order.x; y = order.y; speed = 0; }
+  const next = { ...order, x, y, angle, speed };
+  const arrived = command.interact === true && handoffStatus(next) === "ready";
+  if (arrived && order.picked) return record({ ...state, courier: null, cash: state.cash + 220, experience: state.experience + 3 }, "נמסר בזמן! הרווחת 220 ₪ ו־3 שעות ניסיון.");
+  return { state: { ...state, courier: { ...order, x, y, angle, speed, picked: order.picked || arrived } }, message: arrived ? "ההזמנה בתיק! עכשיו רוכבים ללקוח." : "" };
+}
+
 export function mixCoffee(state, ingredient) {
   if (state.won || state.location !== "cafe" || !state.cafeOrder) return { state, error: "אין הזמנה פעילה בבית הקפה." };
   if (ingredient !== "clear" && !Object.hasOwn(INGREDIENTS, ingredient)) return { state, error: "המרכיב אינו מוכר." };
@@ -203,6 +236,7 @@ export function serveCoffee(state) {
 }
 
 export function travel(state, destination) {
+  if (state.courier) return { state, error: "צריך לסיים קודם את המשלוח." };
   if (state.won) return { state, error: "המסלול הושלם!" };
   if (state.cafeOrder) return { state, error: "הלקוח מחכה לקפה. צריך להגיש את ההזמנה לפני שיוצאים." };
   let hours;
@@ -218,6 +252,7 @@ export function travel(state, destination) {
 }
 
 export function endWeek(state, random = Math.random) {
+  if (state.courier) return { state, error: "צריך לסיים קודם את המשלוח." };
   if (state.won) return { state, error: "המסלול הושלם!" };
   if (state.cafeOrder) return { state, error: "צריך להגיש את ההזמנה לפני שמסיימים את השבוע." };
   const s = structuredClone(state);
@@ -281,6 +316,15 @@ export function parseSave(raw) {
   // Original version-1 saves predate characters and the cafe challenge.
   if (s.encounters === undefined) s.encounters = {};
   if (s.cafeOrder === undefined) s.cafeOrder = null;
+  if (s.courier === undefined) s.courier = null;
+  if (s.courier !== null) {
+    const o = s.courier;
+    if (o && typeof o === "object") { o.angle ??= 0; o.speed ??= 0; }
+    if (!o || s.location !== "park" || !s.inventory.bike || !Number.isFinite(o.angle) || !Number.isFinite(o.speed) || o.speed < -.22 || o.speed > .77 ||
+        !Number.isFinite(o.x) || !Number.isFinite(o.y) ||
+        !onStreet(o.x, o.y) || typeof o.picked !== "boolean" || !Number.isSafeInteger(o.deadline) ||
+        !Number.isInteger(o.stop) || !courierStops[o.stop]) fail();
+  }
   if (s.cafeServed === undefined) s.cafeServed = 0;
   if (!s.encounters || Array.isArray(s.encounters) || typeof s.encounters !== "object") fail();
   for (const [place, encounter] of Object.entries(s.encounters)) {

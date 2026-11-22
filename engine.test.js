@@ -2,6 +2,64 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createGame, actionsFor, perform, travel, travelCost, endWeek, parseSave, progress, netWorth, JOBS, GOALS, mixCoffee, serveCoffee } from "./engine.js";
 import { CHARACTERS, COFFEE_RECIPES } from "./characters.js";
+import { ride, courierTarget } from "./engine.js";
+
+test("courier must collect and reach the customer before being paid once", () => {
+  const initial = createGame();
+  initial.location = "park";
+  assert.ok(perform(initial, "gig", 1000).error);
+  initial.inventory.bike = true;
+  let s = perform(initial, "gig", 1000).state;
+  assert.equal(s.cash, initial.cash);
+  assert.equal(s.experience, 0);
+  assert.equal(s.hours, initial.hours - 3);
+  assert.ok(travel(s, "home").error);
+  assert.ok(endWeek(s).error);
+  let now = 1000;
+  function approach(x, y) {
+    for (let i = 0; i < 800 && s.courier; i++) {
+      const o = s.courier;
+      if (Math.hypot(x-o.x,y-o.y) < .08) break;
+      const desired = Math.atan2(x-o.x,o.y-y);
+      const diff = Math.atan2(Math.sin(desired-o.angle), Math.cos(desired-o.angle));
+      const steer = Math.abs(diff) > .04 ? Math.sign(diff) : 0;
+      s = ride(s,{ dt:.04, steer, throttle:Math.abs(diff) < .15 ? 1 : 0 }, now += 40).state;
+    }
+  }
+  function brakeAndInteract() {
+    for (let i=0;i<12;i++) s = ride(s,{ dt:.04, steer:0, throttle:-1 }, now += 40).state;
+    s = ride(s,{ dt:0, steer:0, throttle:0, interact:true }, now).state;
+  }
+  approach(2,0);
+  assert.equal(s.courier.picked, false);
+  assert.equal(ride(s,{dt:0,steer:0,throttle:0,interact:true},now).state.courier.picked,false);
+  brakeAndInteract();
+  assert.equal(s.courier.picked, true);
+  s = parseSave(JSON.stringify(s));
+  const target = courierTarget(s.courier);
+  approach(6,0);
+  approach(6,4);
+  approach(target.x,target.y);
+  assert.equal(s.cash,initial.cash);
+  brakeAndInteract();
+  assert.equal(s.cash, initial.cash + 220);
+  assert.equal(s.experience, 3);
+  assert.equal(s.courier, null);
+  assert.ok(ride(s, "right", 30999).error);
+});
+
+test("abandoning or reaching the exact deadline after reload gives no reward", () => {
+  const s = createGame();
+  s.location = "park";
+  s.inventory.bike = true;
+  const active = parseSave(JSON.stringify(perform(s, "gig", 1000).state));
+  for (const [command, now] of [["cancel", 1001], ["timeout", 61000]]) {
+    const result = ride(active, command, now).state;
+    assert.equal(result.courier, null);
+    assert.equal(result.cash, s.cash);
+    assert.equal(result.experience, 0);
+  }
+});
 
 test("travel uses shortest ring distance, bikes reduce it, and invalid travel is atomic", () => {
   const s = createGame();

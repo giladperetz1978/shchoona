@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node server.js",
     "test": "node --test",
-    "check": "node --check app.js && node --check engine.js && node --check art.js && node --check characters.js && node --check server.js"
+    "check": "node --check app.js && node --check engine.js && node --check courier-scene.js && node --check courier-world.js && node --check art.js && node --check characters.js && node --check server.js"
   },
+  "dependencies": { "three": "0.160.1" },
   "engines": { "node": ">=22" }
 }

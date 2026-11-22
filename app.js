@@ -1,4 +1,5 @@
-import { PLACES, JOBS, GOALS, createGame, money, progress, actionsFor, unavailable, perform, travel, endWeek, parseSave, mixCoffee, serveCoffee } from "./engine.js";
+import { PLACES, JOBS, GOALS, createGame, money, progress, actionsFor, unavailable, perform, travel, endWeek, parseSave, mixCoffee, serveCoffee, ride, courierTarget, handoffStatus } from "./engine.js";
+import { streetScene } from "./courier-scene.js";
 import { icon, cityArt, interiorArt, characterArt } from "./art.js";
 import { CHARACTERS, COFFEE_RECIPES, INGREDIENTS } from "./characters.js";
 
@@ -12,11 +13,12 @@ let saveStatus = "שמירה אוטומטית";
 let toastTimer;
 let startupError = "";
 let restored = false;
+const demo = new URLSearchParams(location.search).has("ride-demo");
 try {
-  const saved = localStorage.getItem(SAVE_KEY);
+  const saved = !demo && localStorage.getItem(SAVE_KEY);
   if (saved) { state = parseSave(saved); restored = true; }
 } catch (error) { startupError = error.message; }
-if (state.cafeOrder) inside = true;
+if (state.cafeOrder || state.courier) inside = true;
 const escape = text => String(text).replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
 
 function notify(message, error = false) {
@@ -27,6 +29,7 @@ function notify(message, error = false) {
 }
 
 function persist() {
+  if (demo) return true;
   try {
     localStorage.setItem(SAVE_KEY, JSON.stringify(state));
     saveStatus = "כל השינויים נשמרו";
@@ -42,7 +45,94 @@ function meter(label, value, kind) {
   return `<div class="need"><div class="need-label">${icon(kind, 16)}<span>${label}</span><strong>${Math.round(value)}<small>/100</small></strong></div><div class="meter ${kind}${value < 20 ? " low" : ""}" role="progressbar" aria-label="${label}" aria-valuenow="${Math.round(value)}" aria-valuemin="0" aria-valuemax="100"><span style="width:${value}%"></span></div></div>`;
 }
 
+let stopRiding;
+function courierScreen() {
+  app.innerHTML = `<main class="ride-screen"><canvas aria-label="רחובות השכונה במבט מאחורי הרוכב"></canvas>
+    <header><div><small>מחוז הגפן · משמרת שליחים</small><b id="ride-goal"></b></div><span id="ride-clock"></span><button data-ride="cancel">ביטול</button></header>
+    <aside class="ride-handoff"><span id="ride-tip"></span><button id="ride-interact" disabled>איסוף · E</button></aside>
+    <div class="ride-controls"><small>חיצים או WASD · במגע מחזיקים כדי לרכוב ולפנות</small><div dir="ltr">
+    <button data-key="Left" aria-label="פנייה שמאלה">◀</button><button data-key="Right" aria-label="פנייה ימינה">▶</button>
+    <button data-key="Down">בלם</button><button data-key="Up">גז</button></div></div></main>`;
+  const preview = app.querySelector("canvas");
+  let draw = streetScene(preview), navigator;
+  const goal = app.querySelector("#ride-goal"), clock = app.querySelector("#ride-clock");
+  const prompt = app.querySelector("#ride-tip"), handoff = app.querySelector("#ride-interact");
+  let interact = false;
+  handoff.onclick = () => { interact = true; };
+  const keys = new Set(), touches = new Map(), controller = new AbortController();
+  const options = { signal: controller.signal };
+  const mapping = { ArrowUp:"Up",KeyW:"Up",ArrowDown:"Down",KeyS:"Down",ArrowLeft:"Left",KeyA:"Left",ArrowRight:"Right",KeyD:"Right" };
+  for (const type of ["keydown","keyup"]) window.addEventListener(type, e => {
+    if (e.code === "KeyE" && type === "keydown" && !e.repeat) interact = true;
+    if (!mapping[e.code]) return;
+    e.preventDefault();
+    if (type === "keydown") keys.add(e.code); else keys.delete(e.code);
+  }, options);
+  for (const button of app.querySelectorAll("[data-key]")) {
+    button.onpointerdown = e => { e.preventDefault(); button.setPointerCapture(e.pointerId); touches.set(e.pointerId, button.dataset.key); };
+    button.onlostpointercapture = e => touches.delete(e.pointerId);
+  }
+  window.addEventListener("blur", () => { keys.clear(); touches.clear(); }, options);
+  window.addEventListener("pagehide", persist, options);
+  let last = performance.now(), lastSave = last, frame;
+  stopRiding = () => { cancelAnimationFrame(frame); controller.abort(); draw.dispose?.(); stopRiding = null; };
+  import("./courier-world.js").then(({ buildStreet }) => {
+    if (controller.signal.aborted) return;
+    const canvas = preview.cloneNode(false);
+    const world = buildStreet(canvas);
+    preview.replaceWith(canvas);
+    draw = world;
+    canvas.dataset.renderer = "three";
+    canvas.insertAdjacentHTML("afterend", `<svg class="ride-nav" viewBox="-0.6 -0.6 7.2 5.2" aria-label="מפת רחובות ויעד" role="img">
+      <path d="M0 0H6V4H0ZM0 2H6M2 0V4M4 0V4" fill="none" stroke="#acb9ac" stroke-width=".12"/>
+      <circle r=".22" fill="#ffcf49"/><path class="bike-pin" d="M0 -.32L.2 .19L0 .11L-.2 .19Z" fill="#6cffe4"/></svg>`);
+    navigator = canvas.nextElementSibling;
+  }).catch(error => {
+    if (!controller.signal.aborted) { console.warn("3D courier scene unavailable:", error); notify("תלת־ממד לא זמין בדפדפן הזה. ממשיכים בתצוגת הרכיבה הקלה."); }
+  });
+  function tick(t) {
+    const held = new Set([...Array.from(keys, code => mapping[code]), ...touches.values()]);
+    const result = ride(state, { dt: Math.min(.1, Math.max(0,(t-last)/1000)), steer: +held.has("Right") - +held.has("Left"), throttle: +held.has("Up") - +held.has("Down"), interact });
+    interact = false;
+    last = t;
+    if (result.error) { stopRiding(); notify(result.error, true); return; }
+    if (!result.state.courier) { accept(result, "gig"); return; }
+    state = result.state;
+    if (result.message || t-lastSave > 1000) { lastSave = t; if (persist() && result.message) notify(result.message); }
+    const o = state.courier, target = courierTarget(o);
+    draw(o, target, t);
+    if (navigator) {
+      navigator.querySelector("circle").setAttribute("transform", `translate(${target.x} ${target.y})`);
+      navigator.querySelector(".bike-pin").setAttribute("transform", `translate(${o.x} ${o.y}) rotate(${o.angle*180/Math.PI})`);
+    }
+    goal.textContent = `${o.picked ? "מסירה" : "איסוף"} · ${target.name}`;
+    const status = handoffStatus(o);
+    handoff.disabled = status !== "ready";
+    handoff.textContent = o.picked ? "למסור · E" : "לאסוף · E";
+    prompt.textContent = status === "ready" ? (o.picked ? "הלקוח כאן. אפשר למסור!" : "ניסו: שתי מנות חמות, בדיוק בזמן!") : status === "brake" ? "הגעת! להחזיק בלם ↓ ולעצור" : o.picked ? "לחפש את הלקוח ליד הסימון הזהוב" : "ישר בשדרת הגפן, עד הסוכך המפוספס";
+    clock.textContent = `${Math.max(0,Math.ceil((o.deadline-Date.now())/1000))} שנ׳ · ${Math.round(20*Math.hypot(o.x-target.x,o.y-target.y))} מ׳`;
+    frame = requestAnimationFrame(tick);
+  }
+  frame = requestAnimationFrame(tick);
+}
+
+function moveCourier(command) {
+  const result = ride(state, command);
+  if (result.error) { notify(result.error, true); return; }
+  if (!result.state.courier) { accept(result, "gig"); return; }
+}
+
 function render() {
+  stopRiding?.();
+  if (state.courier) { courierScreen(); return; }
+  if (demo) {
+    app.innerHTML = `<main class="courier card"><div class="eyebrow">נסיעת ניסיון · ללא שינוי בשמירה שלך</div><h1>משלוח בשכונה</h1><p>${restored ? escape(state.log[0]) : "האופניים מוכנים. רוכבים ישר לקפה, אוספים ומנווטים לפי המפה אל הלקוח."}</p><p>חץ למעלה להאצה · ימינה ושמאלה להיגוי · למטה לבלימה</p><button class="primary" data-try>לקבל הזמנה ולרכוב</button></main>`;
+    app.querySelector("[data-try]").onclick = () => {
+      state = createGame(); state.location = "park"; state.inventory.bike = true; restored = true;
+      accept(perform(state,"gig"));
+    };
+    return;
+  }
   const place = PLACES.find(p => p.id === state.location);
   const goals = progress(state);
   const total = Math.floor(goals.reduce((sum, g) => sum + g.percent, 0) / 4);
@@ -239,6 +329,8 @@ function handleCommand(command) {
 }
 
 document.addEventListener("click", event => {
+  const rideButton = event.target.closest("[data-ride]");
+  if (rideButton && state.courier) { moveCourier(rideButton.dataset.ride); return; }
   const target = event.target.closest("[data-command], [data-go], [data-action], [data-close], [data-phone-go], [data-reply], [data-ingredient]");
   if (!target) return;
   event.preventDefault();
@@ -283,5 +375,5 @@ dialog.addEventListener("submit", event => {
   if (saved) notify("הסיפור שלך מתחיל עכשיו. קפה פינה הוא מקום טוב להתחיל בו.");
 });
 render();
-if (!restored) welcome();
+if (!restored && !demo) welcome();
 else if (state.won) victory();
