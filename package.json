@@ -1,0 +1,12 @@
+{
+  "name": "life-in-the-city",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test",
+    "check": "node --check app.js && node --check engine.js && node --check art.js && node --check characters.js && node --check server.js"
+  },
+  "engines": { "node": ">=22" }
+}
