@@ -1,4 +1,6 @@
 import * as T from "./vendor/three.module.min.js";
+import { createCreatureFactory } from "./creature-model.js";
+import { PLAYER_CREATURE, RESIDENT_CREATURES } from "./creatures.js";
 
 export function buildStreet(canvas) {
   const renderer = new T.WebGLRenderer({ canvas, antialias: true, powerPreference: "low-power" });
@@ -88,6 +90,7 @@ export function buildStreet(canvas) {
     parts.forEach(([m,c],i)=>{ mesh.setMatrixAt(i,m); mesh.setColorAt(i,c); }); scene.add(mesh);
   }
   const mats = new Map();
+  const creatures = createCreatureFactory();
   function model(parent,geometry,color,x,y,z,w,h,d) {
     if(!mats.has(color)) mats.set(color,new T.MeshLambertMaterial({color}));
     const part=new T.Mesh(geometry,mats.get(color));part.position.set(x,y,z);part.scale.set(w,h,d);parent.add(part);return part;
@@ -106,26 +109,19 @@ export function buildStreet(canvas) {
   }
   model(rider,box,0x32827e,0,.72,0,.15,.19,1.22);
   model(rider,box,0x36414b,0,1.07,.19,.41,.12,.42);
-  model(rider,box,0x303c42,0,1.12,-.57,.76,.07,.08);
-  const legs=[-1,1].map(side=>model(rider,box,0x34485b,side*.18,.83,.08,.21,.68,.24));
-  model(rider,ball,0xe98b57,0,1.5,-.03,.34,.54,.29);
-  for(const side of [-1,1]) model(rider,box,0xcb8969,side*.29,1.37,-.30,.14,.15,.66).rotation.x=-.36;
-  model(rider,ball,0xc9926f,0,2.09,-.18,.22,.26,.22);
-  model(rider,ball,0xf8ac42,0,2.24,-.17,.264,.17,.27);
+  model(rider,box,0x303c42,0,1.28,-.48,.76,.07,.08);
+  const cyclist = creatures.create(PLAYER_CREATURE);
+  cyclist.scale.setScalar(.65); cyclist.position.set(0, .45, -.08); cyclist.rotation.y = Math.PI; rider.add(cyclist);
+  model(cyclist,ball,0xf8ac42,0,2.26,0,.54,.14,.43);
   model(rider,box,0x137d76,0,1.48,.36,.73,.64,.51);
   model(rider,box,0x75dcb8,0,1.82,.36,.76,.10,.54);
   model(rider,box,0xffe1a0,0,1.43,.625,.49,.07,.025);
   const shadow=model(rider,ball,0x434e53,0,.02,0,.5,.016,1.15);
   shadow.position.x=.12;
-  const customer=new T.Group();scene.add(customer);
-  model(customer,ball,0x5960a0,0,1.15,0,.32,.53,.25);
-  model(customer,ball,0xbf8263,0,1.94,0,.23,.25,.22);
-  for(const side of [-1,1]) model(customer,box,0x394751,side*.14,.48,0,.18,.93,.22);
-  const arm=model(customer,box,0xbf8263,.4,1.54,0,.15,.56,.18);
-  const barista=customer.clone();scene.add(barista);barista.position.set(45,.04,0);
-  model(barista,box,0x2e7a69,0,1.2,.22,.57,.78,.13);
+  const customer=creatures.create("mint");scene.add(customer);
+  const barista=creatures.create(RESIDENT_CREATURES.cafe);scene.add(barista);barista.position.set(45,.04,0);
   model(barista,box,0xc89b62,-.43,1.12,.2,.45,.57,.34);
-  const walker=customer.clone();scene.add(walker);
+  const walker=creatures.create("mushroom");scene.add(walker);
   const car=new T.Group();scene.add(car);
   model(car,box,0xc05249,0,.72,0,1.8,.9,3.9);
   model(car,box,0x567482,0,1.38,.14,1.5,.65,2.25);
@@ -153,23 +149,25 @@ export function buildStreet(canvas) {
     lean=T.MathUtils.damp(lean,T.MathUtils.clamp(-turn*o.speed*.14,-.22,.22),9,dt);
     rider.position.set(x,0,z);rider.rotation.order="YXZ";rider.rotation.y=-o.angle;rider.rotation.z=lean;
     lastAngle=o.angle;lastTime=t;
-    legs.forEach((leg,i)=>{leg.rotation.x=Math.sin(t*.014+i*Math.PI)*Math.min(1,Math.abs(o.speed)*2)*.55;});
+    cyclist.userData.pose("ride", Math.abs(o.speed) > .01 ? t / 1000 : 0);
     camera.position.set(x-s*4.3,2.85,z+c*4.3);camera.lookAt(x+s*4,1.15,z-c*4);
     marker.position.set(target.x*20,3.1+.28*Math.sin(t*.004),target.y*20);
     ring.position.set(marker.position.x,.06,marker.position.z);
     customer.visible=o.picked;customer.position.set(marker.position.x+1.5,0,marker.position.z);
     customer.rotation.y=Math.atan2(x-customer.position.x,z-customer.position.z);
-    arm.rotation.z=-.85+.35*Math.sin(t*.006);
+    customer.userData.pose("talk",t/1000);barista.userData.pose("serve",t/1000);
     // The car waits before the crossing while the pedestrian walks, then continues.
     const phase=(60-(o.deadline-Date.now())/1000+24)%24;
     const carZ=phase<5?70-phase*4:phase<12?50:50-(phase-12)*4;
     car.position.set(37.7,.02,carZ);
     walker.position.set(phase<5?33:phase<12?33+(phase-5)*2:47,Math.abs(Math.sin(t*.009))*(phase>=5&&phase<12?.06:0),46);
     walker.rotation.y=Math.PI/2;
+    walker.userData.animate(t/1000,phase>=5&&phase<12?1:0);
     renderer.render(scene,camera);
   }
   draw.dispose=()=>{
-    scene.traverse(obj=>{if(obj.isInstancedMesh) obj.dispose();});
+    scene.children.forEach(obj=>{if(obj.isInstancedMesh) obj.dispose();});
+    creatures.dispose();
     [box,ball,cone,wheel,standard,signGeo,signMat,texture,...mats.values()].forEach(item=>item.dispose());
     renderer.dispose();renderer.forceContextLoss();
   };

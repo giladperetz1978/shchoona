@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "test": "node --test",
-    "check": "node --check app.js && node --check engine.js && node --check courier-scene.js && node --check courier-world.js && node --check art.js && node --check characters.js && node --check server.js"
+    "check": "node --check app.js && node --check engine.js && node --check city-world.js && node --check city-layout.js && node --check city-interface.js && node --check city-activities.js && node --check city-surfaces.js && node --check city-news.js && node --check online-client.js && node --check room-store.js && node --check courier-scene.js && node --check courier-world.js && node --check art.js && node --check characters.js && node --check creatures.js && node --check creature-model.js && node --check server.js"
   },
   "dependencies": { "three": "0.160.1" },
   "engines": { "node": ">=22" }

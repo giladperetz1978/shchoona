@@ -36,7 +36,7 @@ jobs:
       - name: Package static game files
         run: |
           mkdir -p _site/vendor
-          cp index.html styles.css app.js engine.js art.js characters.js courier-*.js _site
+          cp index.html styles.css city.css app.js engine.js art.js characters.js creatures.js creature-model.js online-client.js courier-*.js city-*.js _site
           cp node_modules/three/build/three.module.min.js _site/vendor/
           cp node_modules/three/LICENSE _site/vendor/three-LICENSE.txt
 

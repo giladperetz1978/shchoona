@@ -1,3 +1,5 @@
+import { creatureDesign, PLAYER_CREATURE } from "./creatures.js";
+
 // Heights and ground coordinates use the same world units as the riding simulation.
 const facades = ["#ecc9a2", "#f2dab2", "#d39e89", "#a9c8c1", "#ead4c4"];
 function facade(i) {
@@ -23,6 +25,7 @@ function facade(i) {
 }
 
 export function streetScene(canvas) {
+  const creature = creatureDesign(PLAYER_CREATURE);
   const g = canvas.getContext("2d", { alpha: false });
   if (!g) throw new Error("הדפדפן אינו תומך בתצוגת הרכיבה.");
   const textures = facades.map((_, i) => facade(i));
@@ -108,16 +111,20 @@ export function streetScene(canvas) {
       g.fillStyle="#293e43";g.font="bold .34px sans-serif";g.textAlign="center";g.fillText(o.picked?"✓":"☕",0,-.15);
     });
     paint.sort((a,b) => b[0]-a[0]); paint.forEach(item => item[1]());
-    // Rear view of the cyclist: rear wheel, pedalling legs, jacket, insulated bag and helmet.
+    // Rear view keeps the player's ears and luminous tail visible around the delivery bag.
     g.save(); g.translate(w*.5,h*.96); const scale=Math.min(w,h)*.003; g.scale(scale,scale);
     const pulse = Math.sin(time*.014)*Math.min(1,Math.abs(o.speed)*2);
     const oval=(x,y,rx,ry,color)=>{g.fillStyle=color;g.beginPath();g.ellipse(x,y,rx,ry,0,0,2*Math.PI);g.fill();};
     oval(0,-2,25,5,"#26383c66");oval(0,-21,6,23,"#242e38");oval(0,-21,2,18,"#899798");
     g.lineCap="round"; const line=(x,y,u,v,color,n)=>{g.strokeStyle=color;g.lineWidth=n;g.beginPath();g.moveTo(x,y);g.lineTo(u,v);g.stroke();};
-    line(-8,-49,-9,-17+pulse*5,"#26394a",7);line(8,-49,9,-17-pulse*5,"#26394a",7);
-    line(-19,-51,19,-51,"#303d42",3);line(-10,-69,-18,-52,"#d89462",6);line(10,-69,18,-52,"#d89462",6);
-    oval(0,-61,14,19,"#e37d51");g.fillStyle="#167a78";g.fillRect(-13,-69,26,22);g.fillStyle="#64ceac";g.fillRect(-14,-71,28,7);g.fillStyle="#f7e7bf";g.fillRect(-8,-56,16,3);
-    oval(0,-82,9,10,"#b77a57");oval(0,-87,11,7,"#f0aa49");g.restore();
+    line(-8,-49,-9,-17+pulse*5,creature.color,7);line(8,-49,9,-17-pulse*5,creature.color,7);
+    line(-19,-51,19,-51,"#303d42",3);line(-10,-69,-18,-52,creature.color,8);line(10,-69,18,-52,creature.color,8);
+    oval(0,-61,17,20,creature.color);
+    line(0,-45,12,-36,creature.color,8);oval(15,-36,5,6,creature.accent);
+    g.fillStyle="#167a78";g.fillRect(-13,-69,26,22);g.fillStyle="#64ceac";g.fillRect(-14,-71,28,7);g.fillStyle="#f7e7bf";g.fillRect(-8,-56,16,3);
+    oval(-12,-97,6,16,creature.color);oval(12,-97,6,16,creature.color);
+    oval(-12,-100,3,10,creature.accent);oval(12,-100,3,10,creature.accent);
+    oval(0,-82,15,13,creature.color);oval(0,-87,12,7,"#f0aa49");g.restore();
     // North-up street navigator and heading indicator.
     const m=Math.min(w*.20,h*.30), step=m/7, left=12, top=h-5*step-14;
     g.fillStyle="#193139dd";g.fillRect(left,top,m,5*step);

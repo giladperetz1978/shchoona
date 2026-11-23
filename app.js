@@ -1,7 +1,11 @@
-import { PLACES, JOBS, GOALS, createGame, money, progress, actionsFor, unavailable, perform, travel, endWeek, parseSave, mixCoffee, serveCoffee, ride, courierTarget, handoffStatus } from "./engine.js";
+import { PLACES, JOBS, GOALS, createGame, money, progress, actionsFor, unavailable, perform, travel, endWeek, parseSave, mixCoffee, serveCoffee, ride, courierTarget, handoffStatus, raceOver } from "./engine.js";
+import { createCityInterface } from "./city-interface.js";
 import { streetScene } from "./courier-scene.js";
 import { icon, cityArt, interiorArt, characterArt } from "./art.js";
 import { CHARACTERS, COFFEE_RECIPES, INGREDIENTS } from "./characters.js";
+import { CREATURES, PLAYER_CREATURE, creaturePortrait } from "./creatures.js";
+import { newsFor } from "./city-news.js";
+import { createOnlineClient } from "./online-client.js";
 
 const SAVE_KEY = "neighborhood-life-v1";
 const app = document.querySelector("#app");
@@ -13,6 +17,9 @@ let saveStatus = "שמירה אוטומטית";
 let toastTimer;
 let startupError = "";
 let restored = false;
+let cityUI;
+let classicMode = false;
+let voiceEnabled = false;
 const demo = new URLSearchParams(location.search).has("ride-demo");
 try {
   const saved = !demo && localStorage.getItem(SAVE_KEY);
@@ -20,6 +27,43 @@ try {
 } catch (error) { startupError = error.message; }
 if (state.cafeOrder || state.courier) inside = true;
 const escape = text => String(text).replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
+const online = createOnlineClient({ notify, update: receiveOnline });
+const rivalName = () => state.online ? "היריב ברשת" : "דני";
+
+function receiveOnline(result) {
+  if (!online.active) return;
+  const previous = state;
+  state = result.state;
+  if (previous.online?.revision !== state.online.revision || previous.online?.peerConnected !== state.online.peerConnected) render();
+  if (!cityUI?.busy && !previous.won && state.won) victory();
+  else if (!cityUI?.busy && !previous.opponent?.won && state.opponent?.won) defeat();
+  else if (state.week > previous.week && result.report) { inside = false; render(); weeklyReport(result.report); }
+}
+async function serverResult(kind, id = "") {
+  try { return await online.command(kind, id); }
+  catch (error) { console.error("Online command rejected:", error); return { state, error: error.message }; }
+}
+async function connectRoom(mode, data = {}) {
+  try {
+    const result = await online.connect(mode, data);
+    cityUI?.dispose(); cityUI = null; state = result.state; inside = Boolean(state.cafeOrder);
+    classicMode = false; dialog.close(); render();
+    notify(`חדר ${state.online.room} · שחקן ${state.online.seat + 1}. השמירה המקומית שלך לא השתנתה.`);
+    if (state.won) victory();
+    else if (state.opponent?.won) defeat();
+  } catch (error) { console.error("Room connection failed:", error); notify(error.message, true); }
+}
+function networkMenu() {
+  if (online.active) {
+    showDialog("חדר הרשת שלך", `<p>קוד להזמנת חבר: <strong class="room-code" dir="ltr">${state.online.room}</strong></p><p>שחקן ${state.online.seat + 1} · ${online.connected ? "מחובר לשרת" : "החיבור נעצר — מנסים להתחבר מחדש"}</p><p>שני השחקנים פועלים במקביל. שבוע חדש מתחיל אחרי ששניכם מסיימים. היריב, הפעולות והחדשות מתעדכנים מהשרת.</p><button class="secondary" data-command="offline">לחזור למשחק המקומי</button><p class="dialog-footnote">החדר נשמר בשרת. אפשר לחזור אליו מהלשונית הזאת; החדר אינו מתפנה ביציאה.</p>`);
+    return;
+  }
+  showDialog("משחק רשת · שני שחקנים", `<p>מרוץ פרטי עם חבר, לא יריב ממוחשב. השרת מאמת כסף, זמן ופעולות. השמירה המקומית נשארת נפרדת.</p>
+    <form id="room-create"><button class="primary start-button" type="submit">ליצור חדר חדש · מרוץ קצר</button></form>
+    <form id="room-join"><label>קוד חדר <input name="code" class="room-input" dir="ltr" maxlength="6" pattern="[a-fA-F0-9]{6}" required autocomplete="off" placeholder="A1B2C3"></label><button class="secondary" type="submit">להצטרף לחבר</button></form>
+    ${online.resumable ? '<button class="text-button" data-command="resume-room">לחזור לחדר השמור בלשונית</button>' : ""}
+    <p class="dialog-footnote">נדרש שרת Node של המשחק באותה כתובת. GitHub Pages מציג את המשחק המקומי בלבד. שרת הרשת שומר חדרים עד 24 שעות; משלוחי רכיבה זמינים בינתיים במצב המקומי.</p>`, "network-dialog");
+}
 
 function notify(message, error = false) {
   clearTimeout(toastTimer);
@@ -29,7 +73,7 @@ function notify(message, error = false) {
 }
 
 function persist() {
-  if (demo) return true;
+  if (demo || online.active) return true;
   try {
     localStorage.setItem(SAVE_KEY, JSON.stringify(state));
     saveStatus = "כל השינויים נשמרו";
@@ -124,6 +168,8 @@ function moveCourier(command) {
 
 function render() {
   stopRiding?.();
+  document.body.classList.toggle("city-mode", !classicMode && !state.courier && !demo);
+  if (state.courier || classicMode || demo) { cityUI?.dispose(); cityUI = null; }
   if (state.courier) { courierScreen(); return; }
   if (demo) {
     app.innerHTML = `<main class="courier card"><div class="eyebrow">נסיעת ניסיון · ללא שינוי בשמירה שלך</div><h1>משלוח בשכונה</h1><p>${restored ? escape(state.log[0]) : "האופניים מוכנים. רוכבים ישר לקפה, אוספים ומנווטים לפי המפה אל הלקוח."}</p><p>חץ למעלה להאצה · ימינה ושמאלה להיגוי · למטה לבלימה</p><button class="primary" data-try>לקבל הזמנה ולרכוב</button></main>`;
@@ -133,13 +179,20 @@ function render() {
     };
     return;
   }
+  if (!classicMode) {
+    cityUI ??= createCityInterface(app, {
+      enter, command: handleCommand, notify, coffeeView, benefits: choiceBenefits, paused: () => dialog.open
+    });
+    cityUI.update(state, inside);
+    return;
+  }
   const place = PLACES.find(p => p.id === state.location);
   const goals = progress(state);
   const total = Math.floor(goals.reduce((sum, g) => sum + g.percent, 0) / 4);
   app.innerHTML = `
     <header class="topbar">
       <a class="brand" href="#" data-command="map" aria-label="החיים בשכונה — מפת העיר"><span class="brand-mark">${icon("home", 28)}</span><span>החיים בשכונה<small>הסיפור שלך, הקצב שלך.</small></span></a>
-      <nav aria-label="ניווט ראשי"><button aria-label="השכונה" class="${!inside ? "active" : ""}" data-command="map">${icon("map", 18)}<span>השכונה</span></button><button aria-label="הטלפון שלי" data-command="phone">${icon("phone", 18)}<span>הטלפון שלי</span></button><button aria-label="איך משחקים" data-command="help">${icon("help", 18)}<span>איך משחקים</span></button></nav>
+      <nav aria-label="ניווט ראשי"><button data-command="city">לעיר התלת־ממדית</button><button aria-label="השכונה" class="${!inside ? "active" : ""}" data-command="map">${icon("map", 18)}<span>השכונה</span></button><button aria-label="הטלפון שלי" data-command="phone">${icon("phone", 18)}<span>הטלפון שלי</span></button><button data-command="news">חדשות</button><button data-command="network">רשת</button><button aria-label="איך משחקים" data-command="help">${icon("help", 18)}<span>איך משחקים</span></button></nav>
       <button class="save-button" data-command="save" aria-label="שמירת משחק — ${saveStatus}">${icon("save", 17)}<span>${saveStatus}</span><i class="${saveStatus.includes("נכשלה") ? "failed" : ""}"></i></button>
     </header>
     <main class="layout">
@@ -151,7 +204,7 @@ function render() {
         </section>
         <section class="needs card"><h2>לפני הכול, לדאוג לעצמך</h2>${meter("אנרגיה", state.energy, "energy")}${meter("שובע", state.food, "food")}<div class="inventory">${icon("bag", 16)} ${state.inventory.groceries === 1 ? "מנה אחת" : `${state.inventory.groceries} מנות`} בתיק <span>${[state.inventory.bike && "אופניים", state.inventory.laptop && "מחשב"].filter(Boolean).join(" · ")}</span></div></section>
         <section class="tip-card"><span class="tip-icon">${icon("sun", 23)}</span><div><h3>צעד קטן לשבוע הזה</h3><p>${tip()}</p></div></section>
-        ${state.rival ? `<section class="card rival"><strong>השכן דני · השוואה ידידותית</strong><p>התקדמות משוערת: ${Math.floor(state.rivalProgress)}%</p><small>מדד קצב בלבד, לא יריב שיכול לסיים את המשחק.</small></section>` : ""}
+        ${state.opponent ? `<section class="card rival"><strong>${rivalName()} · היריב שלך</strong><p>${Math.floor(progress(state.opponent).reduce((sum, goal) => sum + goal.percent, 0) / 4)}% מהמטרות</p><button data-command="rival">לצפות בפעולות שלו</button><small>אותם חוקים. הראשון שמשלים את כל המטרות מנצח.</small></section>` : ""}
         <button class="new-game" data-command="new">להתחיל סיפור חדש</button>
       </aside>
       <div class="main-column">
@@ -170,7 +223,7 @@ function render() {
 }
 
 function avatar() {
-  return '<svg viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="20" fill="#e5d7bd"/><path d="M8 64q0-23 24-23t24 23" fill="#6a8b78"/><rect x="26" y="34" width="12" height="13" rx="4" fill="#c99471"/><ellipse cx="32" cy="27" rx="14" ry="17" fill="#dca984"/><path d="M18 27q-7-25 15-23 20 1 13 27l-5-15q-13 7-20 0Z" fill="#45473f"/><path d="M26 34q6 5 12 0" stroke="#9e644f" fill="none" stroke-width="2"/><circle cx="26" cy="27" r="1.3" fill="#45473f"/><circle cx="38" cy="27" r="1.3" fill="#45473f"/></svg>';
+  return creaturePortrait(PLAYER_CREATURE);
 }
 function tip() {
   if (state.food < 20) return "קודם משהו לאכול. אפשר לבשל בבית או לקנות כריך. בלי כסף ועם פחות מ־15 שובע, יש ארוחה קהילתית חינם בפארק.";
@@ -213,12 +266,28 @@ function talk() {
   const talked = encounter?.week === state.week;
   const line = talked ? c.choices[encounter.choice].reply : encounter ? `${c.returnGreeting} ${c.greeting}` : c.greeting;
   const choices = actionsFor(state).filter(a => a.id.startsWith("talk-"));
-  showDialog(c.name, `<div class="conversation-head"><div class="conversation-portrait">${characterArt(state.location, talked ? "happy" : "idle")}</div><div><span class="character-role">${c.role}</span><p class="conversation-line">${line}</p><span class="friendship">${icon("heart", 14)} ${encounter ? encounter.visits === 1 ? "מפגש משותף ראשון" : `${encounter.visits} מפגשים משותפים` : "כל חברות מתחילה ב״היי״"}</span></div></div>
+  showDialog(c.name, `<div class="conversation-head">${classicMode ? `<div class="conversation-portrait">${characterArt(state.location, talked ? "happy" : "idle")}</div>` : ""}<div><span class="character-role">${c.role}</span><p class="conversation-line">${line}</p><span class="friendship">${icon("heart", 14)} ${encounter ? encounter.visits === 1 ? "מפגש משותף ראשון" : `${encounter.visits} מפגשים משותפים` : "היכרות ראשונה"}</span></div></div>
+    <button class="voice-toggle" data-command="voice">${voiceEnabled ? "השתקת דיבור" : "הפעלת דיבור בעברית"} · קול מקומי אם מותקן</button>
     ${talked ? `<div class="conversation-memory"><small>בחרת לומר:</small><p>״${c.choices[encounter.choice].title}״</p><span>הבחירה נשמרה. בשבוע הבא אפשר לבלות יחד שוב.</span></div><button class="primary start-button" data-close>נתראה בשכונה!</button>` :
       `<h3 class="choice-heading">מה עונים?</h3><div class="dialogue-choices">${choices.map(a => {
         const reason = unavailable(state, a);
         return `<button class="dialogue-choice" data-reply="${a.id}" ${reason ? "disabled" : ""}><strong>${a.title}</strong><span class="choice-benefits">${choiceBenefits(a)}</span>${reason ? `<small class="locked-reason">${reason}</small>` : ""}</button>`;
       }).join("")}</div><p class="dialog-footnote">בחירה אחת לכל דמות בכל שבוע. התוצאות והזמן מוצגים מראש.</p>`}`, "conversation-dialog");
+  if (voiceEnabled) speak(line);
+  dialog.querySelector(".voice-toggle").textContent = `${voiceEnabled ? "השתקת דיבור" : "הפעלת דיבור בעברית"} · קול מקומי אם מותקן`;
+}
+
+function speak(line) {
+  if (!("speechSynthesis" in window)) { voiceEnabled = false; notify("הדפדפן לא תומך בדיבור. כתוביות השיחה זמינות.", true); return; }
+  const voice = speechSynthesis.getVoices().find(voice => voice.lang.startsWith("he") && voice.localService);
+  if (!voice) { voiceEnabled = false; notify("לא מותקן קול עברי מקומי. השיחה ממשיכה בכתוביות; לא נשלח טקסט לשירות חיצוני.", true); return; }
+  speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(line);
+  utterance.voice = voice; utterance.lang = "he-IL"; utterance.rate = 1.03;
+  utterance.onerror = event => {
+    if (!["interrupted", "canceled"].includes(event.error)) notify(`הדיבור נעצר: ${event.error}. אפשר לקרוא את הכתוביות.`, true);
+  };
+  speechSynthesis.speak(utterance);
 }
 
 function coffeeView() {
@@ -246,21 +315,30 @@ function showDialog(title, content, className = "") {
 }
 
 function welcome(restart = false) {
-  showDialog("יש לך חיים שלמים לבנות.", `
-    <div class="intro-art">${avatar()}<span>${icon("leaf", 44)}</span></div>
-    <span class="eyebrow">ברוכים הבאים לחיים בשכונה</span>
-    <p class="intro-text">דירה קטנה, קצת כסף, וכל האפשרויות פתוחות.<br>לעבוד, ללמוד, לפגוש חברים — ולמצוא את האיזון שלך.</p>
+  showDialog("העיר פתוחה. המרוץ שלך.", `
+    <div class="intro-kicker">CITY LEAGUE / מחוז הגפן</div>
+    <p class="intro-text">יוצאים לרחוב, נכנסים לעסקים ובונים קריירה.<br>60 שעות בשבוע. יריב אחד. מי מגיע ראשון?</p>
+    <div class="intro-controls"><span><b>WASD / חיצים</b> ללכת בעיר</span><span><b>E</b> להיכנס ולדבר</span><span><b>מפה</b> ניווט אוטומטי</span></div>
     ${restart ? '<p class="warning">התחלת סיפור חדש תחליף את השמירה הקיימת.</p>' : ""}
     ${startupError ? `<p class="warning" role="alert">${escape(startupError)}</p>` : ""}
-    <form id="start-form"><fieldset><legend>באיזה קצב משחקים?</legend><label class="difficulty"><input type="radio" name="difficulty" value="relaxed" checked><span><strong>בקצב שלי</strong><small>6,000 ₪ · 75 אושר · 3 תעודות · קריירה בדרגה 3</small></span><span class="tag">להתחלה</span></label><label class="difficulty"><input type="radio" name="difficulty" value="classic"><span><strong>החיים בגדול</strong><small>12,000 ₪ · 85 אושר · 6 תעודות · קריירה בדרגה 4</small></span></label></fieldset><label class="checkbox"><input type="checkbox" name="rival"> להוסיף את דני השכן כמדד קצב ידידותי, לא כתחרות</label><button class="primary start-button" type="submit">יאללה, יוצאים לחיים ${icon("arrow", 18)}</button></form><p class="dialog-footnote">משחק יחיד · נשמר בדפדפן הזה · בלי הרשמה ובלי שרת חיצוני</p>`, "welcome-dialog");
+    <form id="start-form"><fieldset><legend>לבחור מסלול</legend><label class="difficulty"><input type="radio" name="difficulty" value="relaxed" checked><span><strong>מרוץ קצר</strong><small>6,000 ₪ · 75 אושר · 3 תעודות · קריירה בדרגה 3</small></span><span class="tag">להתחלה</span></label><label class="difficulty"><input type="radio" name="difficulty" value="classic"><span><strong>ליגה ארוכה</strong><small>12,000 ₪ · 85 אושר · 6 תעודות · קריירה בדרגה 4</small></span></label></fieldset><label class="checkbox"><input type="checkbox" name="rival" checked> מרוץ מול דני · יריב ממוחשב שמשחק באותם חוקים</label><button class="primary start-button" type="submit">להיכנס לעיר ${icon("arrow", 18)}</button></form><p class="dialog-footnote">תחרות מקומית לשחקן אחד, לא אונליין · נשמר בדפדפן הזה</p>`, "welcome-dialog");
 }
 
 function help() {
-  showDialog("איך בונים חיים בשכונה?", `<p>המטרה: למלא יחד את ארבעת המדדים — כסף, אושר, השכלה וקריירה. אין מגבלת שבועות.</p><div class="help-steps"><section><b>01 · יוצאים לשכונה</b><p>לוחצים על בניין ונכנסים פנימה. המעבר צורך 1–5 שעות לפי מרחק על המסלול. אופניים מקצרים את הדרך. לחיצה על המקום הנוכחי היא בחינם.</p></section><section><b>02 · מנהלים 60 שעות בשבוע</b><p>כל פעולה עולה זמן. בקפה פינה מתקבלים בלי ניסיון. משמרת היא 6 שעות, מכניסה 270 ₪ ומורידה 28 אנרגיה. צריך לפחות 15 שובע ואנרגיה מספקת.</p></section><section><b>03 · לומדים ומתקדמים</b><p>כל ארבעה שיעורים מעניקים תעודה. רכז/ת תפעול: תעודה אחת ו־12 שעות ניסיון. תוכנה: 3 תעודות ו־36 שעות. ראש צוות: 5 תעודות ו־90 שעות. צריך להגיע למקום ולהגיש מועמדות.</p></section><section><b>04 · לא שוכחים לחיות</b><p>אוכל, מנוחה וחברים חשובים. מצרכים משמשים לבישול בבית ולסוף השבוע. מנוחה בבית וטיול בפארק הם בחינם. האושר יכול לרדת, ולכן כדאי לאזן.</p></section><section><b>05 · השבוע הבא</b><p>שכירות נגבית אוטומטית: קודם מהמזומן, אחר כך מהחיסכון. חוסר הופך לחוב ומפחית אושר. חיסכון צובר 1%, חוב צובר 2%. האנרגיה עולה ב־45, המחירים משתנים עד 10%, והשכר והשכירות נשארים קבועים.</p></section><section><b>06 · החיים של היום</b><p>מחשב פותח לימודים אונליין ופרילנס אחרי שתי תעודות, ותפקיד בהייטק מאפשר עבודה מרחוק. אופניים פותחים משלוחים בפארק. הזמנת אוכל זמינה בבית. שווי הון הוא מזומן וחיסכון פחות חובות — לא הלוואות ולא חפצים.</p></section></div><p class="dialog-footnote">בהשראת Jones in the Fast Lane. יצירה עצמאית, ללא קוד, איורים או דמויות מהמשחק המקורי.</p><button class="primary" data-close>הבנתי, חוזרים לחיים</button>`, "help-dialog");
+  if (online.active) { networkMenu(); return; }
+  showDialog("שליטה בעיר", `<div class="help-steps"><section><b>תנועה וכניסה</b><p>WASD או חיצים לתנועה, Shift לריצה. גרירה על העולם מסובבת את המצלמה, גלילה משנה זום. במגע משתמשים בחיצי המסך. במפה בוחרים יעד כדי ללכת אליו אוטומטית; תנועה ידנית מבטלת את הניווט. ליד כניסה מוארת לוחצים E או על כפתור הכניסה.</p></section><section><b>בתוך מבנה</b><p>אפשר לנוע בחדר, לגשת לדמות וללחוץ E לשיחה. פעולות המקום מופיעות למטה. יציאה דרך הדלת או כפתור יציאה. הליכה חופשית אינה צורכת שעות; כניסה ליעד אחר גובה את זמן הנסיעה הרגיל, 1–5 שעות. אופניים מקצרים נסיעות.</p></section><section><b>60 שעות כדי להתקדם</b><p>בקפה מתקבלים בלי ניסיון. ארבעה שיעורים מעניקים תעודה. עבודה ולימודים דורשים שובע ואנרגיה. מנוחה בבית חינם; כשאין שובע יש ארוחה קהילתית בפארק. שכירות נגבית בסוף השבוע: מזומן, חיסכון ואז חוב.</p></section><section><b>המרוץ מול דני</b><p>צריך להשלים יחד הון, אושר, השכלה וקריירה. בסיום השבוע שלך דני משחק שבוע שלם באותם חוקי עבודה, נסיעה, לימודים ושכירות. התור מוצג כשחזור בעיר: אפשר להשהות, להתקדם פעולה או להאיץ. הפס הכתום בכל יעד מסמן את דני. הראשון שמסיים מנצח; אין הגבלה מדומה של 95%. זה יריב ממוחשב מקומי, לא שחקן מחובר.</p></section><section><b>שמירה ודיבור</b><p>התקדמות נשמרת אחרי פעולות, לא בכל צעד ברחוב. חזרה למשחק מתחילה ליד המקום האחרון. בשיחות יש כתוביות ובחירות; דיבור קולי זמין רק אם מותקן בדפדפן קול עברי מקומי. אין הקלטות קול מובנות ואין פנייה לשירות חיצוני.</p></section></div><button class="primary start-button" data-close>חזרה לעיר</button>`, "help-dialog");
 }
 
 function phone() {
   showDialog("הטלפון שלי", `<div class="phone-date">שבוע ${state.week} · ${state.hours} שעות פנויות</div><div class="phone-balance">${money(state.cash)}<small>זמין עכשיו · חיסכון ${money(state.savings)} · חוב ${money(state.debt)}</small></div><div class="phone-apps"><button data-phone-go="home">${icon("home", 28)}<strong>מהבית</strong><span>אוכל, קורסים ופרילנס</span></button><button data-phone-go="park">${icon("bag", 28)}<strong>משלוחים</strong><span>עבודה גמישה עם אופניים</span></button><button data-phone-go="bank">${icon("wallet", 28)}<strong>הכסף שלי</strong><span>חיסכון והלוואות</span></button><button data-phone-go="shop">${icon("phone", 28)}<strong>שדרוגים</strong><span>מחשב ואופניים</span></button></div><p class="dialog-footnote">בחירת יישום מעבירה למקום המתאים וצורכת זמן נסיעה רגיל.</p>`, "phone-dialog");
+}
+
+function creatureCast() {
+  showDialog("היצורים של השכונה", `<p>עשרה יצורים בהשראת התמונה וארבעה תושבים חדשים. פוגשים אותם ברחוב, בתוך העסקים ובפעילויות.</p><div class="creature-grid">${Object.entries(CREATURES).map(([id, c]) => {
+    const resident = Object.entries(CHARACTERS).find(([, character]) => character.creature === id);
+    const home = resident ? `${resident[1].name} · ${PLACES.find(place => place.id === resident[0]).name}` : c.source === "original" ? "יצור מקורי נוסף" : "";
+    return `<article>${creaturePortrait(id)}<h3>${c.name}</h3><small>${home}</small><p>${c.description}</p></article>`;
+  }).join("")}</div><button class="primary start-button" data-close>לפגוש אותם בעיר</button>`, "creature-dialog");
 }
 
 function confirmEnd() {
@@ -268,30 +346,57 @@ function confirmEnd() {
 }
 
 function weeklyReport(report) {
-  showDialog(report.title, `<div class="week-report-icon">${icon("sun", 46)}</div><p class="report-event">${report.event}</p><div class="bill-row"><span>שכירות ששולמה / חויבה</span><b>${money(report.rent)}</b></div><div class="bill-row"><span>ריבית שהתקבלה בחיסכון</span><b>+${money(report.interest)}</b></div><div class="bill-row"><span>ריבית שנוספה לחוב</span><b>${money(report.debtInterest)}</b></div>${report.unpaid ? `<p class="warning">יתרת שכירות של ${money(report.unpaid)} נוספה לחוב.</p>` : ""}<p>${report.foodText}</p><p class="market-news">מדד מחירים חדש: ${Math.round(report.economy * 100)}% ממחיר הבסיס. המשכורת והשכירות לא השתנו.</p><button class="primary start-button" data-close>שבוע ${state.week}, הנה אני בא/ה ${icon("arrow", 18)}</button>`);
+  showDialog(`מבזק חדשות · שבוע ${state.week}`, `${newsCard(state.news[0])}
+    <details class="news-bill"><summary>החשבון של השבוע</summary><div class="bill-row"><span>שכירות</span><b>${money(report.rent)}</b></div><div class="bill-row"><span>ריבית בחיסכון</span><b>+${money(report.interest)}</b></div><div class="bill-row"><span>ריבית על חוב</span><b>${money(report.debtInterest)}</b></div>${report.unpaid ? `<p class="warning">${money(report.unpaid)} נוספו לחוב.</p>` : ""}<p>${report.foodText}</p></details>
+    <button class="primary start-button" data-close>בחזרה לעיר · שבוע ${state.week}</button>`, "news-dialog");
 }
 
+function newsCard(entry) {
+  const news = newsFor(entry);
+  return `<section class="news-broadcast"><div class="news-station"><b>שכונה 24</b><span>● מבזק · ${news.category}</span></div><div class="news-studio">${creaturePortrait("cloud")}<div><small>מהדורת העיר · שבוע ${entry.week}</small><h3>${news.headline}</h3><p>${news.title}</p></div></div><div class="news-effects"><span>כסף: <bdi>${news.cash > 0 ? "+" : ""}${money(news.cash)}</bdi></span><span>אושר: <bdi>${news.happiness > 0 ? "+" : ""}${news.happiness}</bdi></span><span>מחירי השבוע: ${Math.round(entry.economy * 100)}%</span></div><small class="news-applied">ההשפעות כבר חושבו בשמירה. צפייה חוזרת אינה מעניקה פרס נוסף.</small></section>`;
+}
+function newsArchive() {
+  showDialog("חדשות השכונה", state.news.length ? state.news.map(newsCard).join("") : "<p>המהדורה הראשונה תופיע בסיום השבוע. כאן יישמרו 12 המבזקים האחרונים.</p>", "news-dialog");
+}
 function victory() {
-  showDialog("אלה החיים שבנית. כל הכבוד!", `<div class="week-report-icon">${icon("leaf", 55)}</div><p>בשבוע ${state.week} השלמת את כל ארבע המטרות במסלול ״${GOALS[state.difficulty].name}״.</p>${progress(state).map(g => `<div class="bill-row"><span>${g.name}</span><b>${g.format(g.value)} ${icon("check", 16)}</b></div>`).join("")}<p>ההישג נשמר בדפדפן. אפשר לחזור ולהסתכל בעיר או להתחיל סיפור חדש.</p><button class="primary start-button" data-command="new">לסיפור הבא</button>`);
+  if (state.online?.tie) {
+    showDialog("המרוץ הסתיים בתיקו!", "<p>שניכם השלמתם את ארבע המטרות בסיכום אותו שבוע.</p><button class=\"primary start-button\" data-command=\"network\">פרטי החדר</button>");
+    return;
+  }
+  showDialog("אלה החיים שבנית. כל הכבוד!", `<div class="week-report-icon">${icon("leaf", 55)}</div><p>בשבוע ${state.week} השלמת את כל ארבע המטרות במסלול ״${GOALS[state.difficulty].name}״.</p>${progress(state).map(g => `<div class="bill-row"><span>${g.name}</span><b>${g.format(g.value)} ${icon("check", 16)}</b></div>`).join("")}<p>ההישג נשמר ${online.active ? "בשרת החדר" : "בדפדפן"}. אפשר לחזור ולהסתכל בעיר או להתחיל סיפור חדש.</p><button class="primary start-button" data-command="new">לסיפור הבא</button>`);
 }
 
-function accept(result, focusAction) {
+function defeat() {
+  showDialog(`${rivalName()} הגיע ראשון.`, `<p>הוא השלים את ארבע המטרות בשבוע ${state.opponent.week}. אפשר לצפות בפעולותיו ולהתכונן למרוץ חוזר.</p>${progress(state.opponent).map(goal => `<div class="bill-row"><span>${goal.name}</span><b>${goal.format(goal.value)}</b></div>`).join("")}<div class="dialog-buttons"><button class="primary" data-command="rival">לצפות בתור שלו</button><button class="secondary" data-command="new">מרוץ חוזר</button></div>`);
+}
+
+function accept(result, focusAction, afterVisual) {
   if (result.error) { notify(result.error, true); return false; }
   state = result.state;
   const saved = persist();
   render();
-  if (focusAction) {
-    const previous = app.querySelector(`[data-action="${focusAction}"]:not(:disabled)`);
-    (previous || app.querySelector(".action-card:not(:disabled)") || app.querySelector('[data-command="map"]'))?.focus({ preventScroll: true });
+  if (saved) notify(result.message);
+  const finish = () => {
+    if (focusAction) {
+      const previous = app.querySelector(`[data-action="${focusAction}"]:not(:disabled)`);
+      (previous || app.querySelector(".venue-action:not(:disabled), .action-card:not(:disabled)") || app.querySelector('[data-command="map"]'))?.focus({ preventScroll: true });
+    }
+    if (state.won) victory();
+    else if (state.opponent?.won) defeat();
+    else afterVisual?.();
+  };
+  if (focusAction && cityUI) {
+    dialog.close();
+    if (cityUI.play(focusAction, result.message, finish)) return true;
   }
-  if (state.won) victory();
-  else if (saved) notify(result.message);
+  finish();
   return true;
 }
 
-function enter(placeId) {
-  if (state.won) { victory(); return; }
-  const result = travel(state, placeId);
+async function enter(placeId) {
+  if (online.busy) { notify("ממתינים לאישור השרת."); return; }
+  if (raceOver(state)) { state.won ? victory() : defeat(); return; }
+  const result = online.active ? await serverResult("travel", placeId) : travel(state, placeId);
   if (result.error) { notify(result.error, true); return; }
   inside = true;
   dialog.close();
@@ -300,20 +405,54 @@ function enter(placeId) {
   app.querySelector(".interior-panel [data-command='map']")?.focus({ preventScroll: true });
 }
 
-function handleCommand(command) {
+async function handleCommand(command) {
+  if (online.busy) { notify("ממתינים לאישור השרת."); return; }
+  if (cityUI?.busy) { notify("הפעולה מתבצעת. אפשר להמתין או לדלג על האנימציה."); return; }
+  if (command === "classic") { classicMode = true; render(); return; }
+  if (command === "network") { networkMenu(); return; }
+  if (command === "resume-room") { await connectRoom("resume"); return; }
+  if (command === "offline") {
+    let local;
+    try { const saved = localStorage.getItem(SAVE_KEY); local = saved ? parseSave(saved) : createGame(); }
+    catch (error) { notify(error.message, true); return; }
+    online.stop(); cityUI?.dispose(); cityUI = null; state = local;
+    inside = Boolean(state.cafeOrder || state.courier); dialog.close(); render(); return;
+  }
+  if (command === "news") { newsArchive(); return; }
+  if (["city", "retry-city"].includes(command)) {
+    classicMode = false; cityUI?.dispose(); cityUI = null; render(); return;
+  }
+  if (command === "rival") {
+    if (classicMode) {
+      showDialog(`הפעולות של ${rivalName()}`, state.rivalReplay.length ?
+        `<ol class="full-journal">${state.rivalReplay.map(frame => `<li>${escape(frame.message)} · ${frame.hours} ש׳ · ${money(frame.cash)}</li>`).join("")}</ol><button class="primary" data-close>חזרה למשחק</button>` :
+        `<p>${state.online ? "ממתינים לפעולות היריב." : "התור הראשון של דני יתחיל אחרי סיום השבוע שלך."}</p><button class="primary" data-close>חזרה למשחק</button>`);
+      return;
+    }
+    dialog.close(); classicMode = false; render(); cityUI.replay(); return;
+  }
+  if (command === "voice") {
+    voiceEnabled = !voiceEnabled;
+    if (!voiceEnabled && "speechSynthesis" in window) speechSynthesis.cancel();
+    talk(); return;
+  }
+  if (cityUI?.spectating && ["map", "talk", "phone", "end", "confirm-end"].includes(command)) {
+    notify("קודם חוזרים מהצפייה בפעולות היריב."); return;
+  }
   if (command === "map") {
     if (state.cafeOrder) { notify("עוד הזמנה אחת! קודם מגישים את הקפה.", true); return; }
     inside = false; render();
   }
   if (command === "talk") talk();
   if (command === "serve-coffee") {
-    const result = serveCoffee(state);
-    if (accept(result) && !state.won) coffeeFeedback(result);
+    const result = online.active ? await serverResult("serve") : serveCoffee(state);
+    accept(result, "serve-coffee", () => coffeeFeedback(result));
   }
   if (command === "help") help();
   if (command === "phone") phone();
-  if (command === "save") { const saved = persist(); render(); if (saved) notify("המשחק נשמר בדפדפן. אפשר לחזור בדיוק לכאן."); }
-  if (command === "new") welcome(true);
+  if (command === "creatures") creatureCast();
+  if (command === "save") { const saved = persist(); render(); if (saved) notify(online.active ? "כל פעולה מאושרת נשמרת בשרת. החיבור נשמר בלשונית הזאת." : "המשחק נשמר בדפדפן. אפשר לחזור בדיוק לכאן."); }
+  if (command === "new") { if (online.active) networkMenu(); else welcome(true); }
   if (command === "journal") showDialog("היומן שלי", `<ol class="full-journal">${state.log.map(entry => `<li>${escape(entry)}</li>`).join("")}</ol><button class="primary" data-close>בחזרה לשכונה</button>`);
   if (command === "end") {
     if (state.cafeOrder) { notify("צריך להגיש את ההזמנה לפני שמסיימים את השבוע.", true); return; }
@@ -321,37 +460,51 @@ function handleCommand(command) {
   }
   if (command === "confirm-end") {
     dialog.close();
-    const result = endWeek(state);
+    const result = online.active ? await serverResult("end") : endWeek(state);
     if (result.error) { notify(result.error, true); return; }
     inside = false;
-    if (accept(result) && !state.won) weeklyReport(result.report);
+    if (accept(result) && !state.won && !state.online) {
+      if (state.opponent && !classicMode) {
+        cityUI.replay();
+        if (!state.opponent.won) weeklyReport(result.report);
+      }
+      else if (!state.opponent?.won) weeklyReport(result.report);
+    }
+    if (state.online && result.report && !raceOver(state)) weeklyReport(result.report);
   }
 }
 
-document.addEventListener("click", event => {
+document.addEventListener("click", async event => {
   const rideButton = event.target.closest("[data-ride]");
   if (rideButton && state.courier) { moveCourier(rideButton.dataset.ride); return; }
   const target = event.target.closest("[data-command], [data-go], [data-action], [data-close], [data-phone-go], [data-reply], [data-ingredient]");
   if (!target) return;
   event.preventDefault();
   if (target.hasAttribute("data-close")) { dialog.close(); return; }
+  if (online.busy) { notify("ממתינים לאישור השרת."); return; }
+  if (cityUI?.busy) { notify("הפעולה מתבצעת. אפשר להמתין או לדלג על האנימציה."); return; }
+  if (cityUI?.spectating && (target.dataset.action || target.dataset.reply || target.dataset.ingredient || target.dataset.go || target.dataset.phoneGo)) {
+    notify("קודם חוזרים מהצפייה בפעולות היריב."); return;
+  }
   if (target.dataset.reply) {
-    if (accept(perform(state, target.dataset.reply)) && !state.won) talk();
+    accept(online.active ? await serverResult("action", target.dataset.reply) : perform(state, target.dataset.reply), target.dataset.reply, talk);
     return;
   }
   if (target.dataset.ingredient) {
     const id = target.dataset.ingredient;
-    if (accept(mixCoffee(state, id))) {
+    accept(online.active ? await serverResult("mix", id) : mixCoffee(state, id), `mix-${id}`, () => {
       (app.querySelector(`[data-ingredient="${id}"]:not(:disabled)`) || app.querySelector('[data-command="serve-coffee"]'))?.focus({ preventScroll: true });
-    }
+    });
     return;
   }
   if (target.dataset.go || target.dataset.phoneGo) { enter(target.dataset.go || target.dataset.phoneGo); return; }
   if (target.dataset.action) {
-    if (accept(perform(state, target.dataset.action), target.dataset.action) && state.cafeOrder) {
-      app.querySelector(".coffee-game")?.scrollIntoView({ behavior: "smooth", block: "center" });
-      app.querySelector("[data-ingredient]")?.focus({ preventScroll: true });
-    }
+    accept(online.active ? await serverResult("action", target.dataset.action) : perform(state, target.dataset.action), target.dataset.action, () => {
+      if (state.cafeOrder) {
+        app.querySelector(".coffee-game")?.scrollIntoView({ behavior: "smooth", block: "center" });
+        app.querySelector("[data-ingredient]")?.focus({ preventScroll: true });
+      }
+    });
     return;
   }
   if (target.dataset.command) handleCommand(target.dataset.command);
@@ -362,18 +515,29 @@ document.addEventListener("keydown", event => {
     enter(event.target.dataset.go);
   }
 });
-dialog.addEventListener("submit", event => {
+dialog.addEventListener("submit", async event => {
+  if (["room-create", "room-join"].includes(event.target.id)) {
+    event.preventDefault();
+    const code = new FormData(event.target).get("code");
+    await connectRoom(event.target.id === "room-create" ? "create" : "join",
+      event.target.id === "room-create" ? { difficulty: "relaxed" } : { code: String(code).trim().toUpperCase() });
+    return;
+  }
   if (event.target.id !== "start-form") return;
   event.preventDefault();
   const data = new FormData(event.target);
   state = createGame(data.get("difficulty"), data.has("rival"));
+  cityUI?.dispose(); cityUI = null;
   inside = false;
   startupError = "";
   dialog.close();
   const saved = persist();
   render();
-  if (saved) notify("הסיפור שלך מתחיל עכשיו. קפה פינה הוא מקום טוב להתחיל בו.");
+  if (saved) notify("המרוץ התחיל. לבחור בקפה פינה במפה, ללכת לכניסה וללחוץ E.");
 });
+dialog.addEventListener("close", () => { if ("speechSynthesis" in window) speechSynthesis.cancel(); });
 render();
-if (!restored && !demo) welcome();
+if (online.restore && !demo) connectRoom("resume");
+else if (!restored && !demo) welcome();
 else if (state.won) victory();
+else if (state.opponent?.won) defeat();

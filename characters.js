@@ -1,102 +1,104 @@
+import { RESIDENT_CREATURES } from "./creatures.js";
+
 export const CHARACTERS = {
   home: {
-    name: "גילה מהוועד", role: "שרת הפנים של חדר המדרגות", color: "#b281b9", skin: "#edbd91", hair: "#e0d5c4", style: "bun", prop: "clipboard",
-    greeting: "פתחתי קבוצת ווטסאפ לשקט בבניין. יש כבר 438 הודעות.",
-    returnGreeting: "איזה יופי שחזרת! יש לי עדכון דחוף על העדכון הקודם.",
+    name: "גילה", role: "השכנה מקומה שלוש", creature: RESIDENT_CREATURES.home,
+    greeting: "ראיתי שחזרת מאוחר. הכול בסדר? אני בדיוק מכינה תה.",
+    returnGreeting: "טוב לראות אותך שוב.",
     choices: [
-      { title: "נשלח הודעה שמבקשת לא לשלוח הודעות", reply: "רעיון גאוני! אשלח גם תזכורת, סקר וקובץ הסבר.", hours: 1, cost: 0, effects: { happiness: 7 } },
-      { title: "קודם תה, אחר כך ישיבת ועד", reply: "סוף סוף מישהו עם סדרי עדיפויות. יש גם עוגייה שלא מופיעה בתקציב.", hours: 2, cost: 15, effects: { energy: 12, food: 12, happiness: 5 } },
-      { title: "אני מתנדב/ת להשקות את העציץ בלובי", reply: "הוא מפלסטיק, אבל אני מעריכה את המחויבות.", hours: 1, cost: 0, effects: { happiness: 5, energy: -2 } }
+      { title: "שבוע עמוס. אפשר לשבת רגע?", reply: "בטח. לא חייבים להספיק הכול היום. איך הולך בעבודה?", hours: 1, cost: 0, effects: { happiness: 7 } },
+      { title: "תה ומשהו קטן לאכול נשמע טוב", reply: "יש לחם טרי וגבינה. תשאיר/י את הטלפון רגע, הוא יחכה.", hours: 2, cost: 15, effects: { energy: 12, food: 12, happiness: 5 } },
+      { title: "אני אעזור עם העציצים בלובי", reply: "תודה. אני לא מגיעה לזה השבוע. המפתח למחסן ליד הדלת.", hours: 1, cost: 0, effects: { happiness: 5, energy: -2 } }
     ]
   },
   cafe: {
-    name: "ניסו אספרסו", role: "בריסטה עם דוקטורט בקצף", color: "#d98660", skin: "#d9a078", hair: "#503b35", style: "moustache", prop: "cup",
-    greeting: "לקוח ביקש קפה בלי קפאין, בלי חלב ובלי מים. הבאתי לו חשבונית.",
-    returnGreeting: "הנה הפרצוף האהוב עליי! אחרי הפרצוף שמופיע בקצף, כמובן.",
+    name: "ניסו", role: "בעל קפה פינה", creature: RESIDENT_CREATURES.cafe,
+    greeting: "הבוקר פה לא עוצר. יש משמרת פנויה, ואם באת לקפה — שב/י, אני כבר איתך.",
+    returnGreeting: "היי, מה נשמע?",
     choices: [
-      { title: "נצייר חתול בקצף?", reply: "יצא תפוח אדמה עם שפם. נקרא לזה חתול אבסטרקטי ונוסיף 4 שקלים.", hours: 1, cost: 0, effects: { happiness: 8 } },
-      { title: "אפשר טעימה מהתערובת הסודית?", reply: "הסוד הוא ששמתי קפה בקפה. אל תספר/י למתחרים.", hours: 1, cost: 10, effects: { energy: 18, happiness: 3 } },
-      { title: "בוא נעשה דקת שקט למכונת הקפה", reply: "ששש... היא טוחנת מחשבות.", hours: 1, cost: 0, effects: { energy: 6, happiness: 4 } }
+      { title: "איך פתחת את המקום הזה?", reply: "שנתיים חסכתי. בהתחלה היינו שלושה שולחנות ומכונה יד שנייה. עכשיו חסרות לי ידיים.", hours: 1, cost: 0, effects: { happiness: 8 } },
+      { title: "תעשה לי אספרסו קצר", reply: "קח/י. התערובת הזאת הגיעה הבוקר, תגיד/י מה דעתך.", hours: 1, cost: 10, effects: { energy: 18, happiness: 3 } },
+      { title: "נצא להפסקה בחוץ?", reply: "כן. חמש דקות בלי הזמנות יעשו לי טוב.", hours: 1, cost: 0, effects: { energy: 6, happiness: 4 } }
     ]
   },
   college: {
-    name: "ד״ר פלפל", role: "מרצה בכיר להסברים ארוכים", color: "#839bc4", skin: "#ecc29b", hair: "#e2e7e4", style: "wild", prop: "book",
-    greeting: "היום נלמד ניהול זמן. השיעור היה אמור להתחיל אתמול.",
-    returnGreeting: "אני זוכר אותך! או שזו הייתה שקופית? בכל מקרה, מצוין.",
+    name: "ד״ר פלפל", role: "מרצה בקמפוס", creature: RESIDENT_CREATURES.college,
+    greeting: "השיעור מתחיל עוד מעט. אם משלבים עבודה ולימודים, כדאי לבחור מראש יום קבוע.",
+    returnGreeting: "טוב שחזרת לקמפוס.",
     choices: [
-      { title: "אפשר הסבר במשפט אחד?", reply: "בהחלט. ראשית, עלינו להגדיר מהו משפט. נפגש בעוד שעתיים.", hours: 2, cost: 0, effects: { happiness: 6 } },
-      { title: "הבאתי קפה כדי לשרוד את המצגת", reply: "נהדר! גם המצגת ביקשה אחד. היא בשקופית 312.", hours: 1, cost: 15, effects: { energy: 15, happiness: 4 } },
-      { title: "הכלב אכל לי את שיעורי הבית הדיגיטליים", reply: "זה מסביר למה הוא נובח ב־PDF. ניתן לו תעודת הצטיינות.", hours: 1, cost: 0, effects: { happiness: 8 } }
+      { title: "אני מתלבט/ת אם הכיוון הזה מתאים לי", reply: "בוא/י נעבור על האפשרויות. לא צריך לבחור מקצוע לכל החיים, רק את הצעד הבא.", hours: 2, cost: 0, effects: { happiness: 6 } },
+      { title: "יש זמן לקפה לפני השיעור?", reply: "יש. ניפגש בקפטריה ונעבור על מה שפספסת.", hours: 1, cost: 15, effects: { energy: 15, happiness: 4 } },
+      { title: "הצלחתי לפנות זמן ללימודים השבוע", reply: "זה החלק הקשה. עכשיו פשוט להגיע, גם כשלא מרגישים מוכנים.", hours: 1, cost: 0, effects: { happiness: 8 } }
     ]
   },
   office: {
-    name: "תיקי תקתק", role: "מנהלת ישיבות על ישיבות", color: "#64a3ad", skin: "#c78e68", hair: "#423537", style: "bob", prop: "clipboard",
-    greeting: "ביטלתי את הישיבה. קבעתי ישיבה קצרה כדי להסביר למה.",
-    returnGreeting: "טוב שבאת. בדיוק חיפשתי מישהו שיעשה ריפליי־אול.",
+    name: "תיקי", role: "מנהלת התפעול", creature: RESIDENT_CREATURES.office,
+    greeting: "אנחנו מרחיבים את הצוות. צריך מישהו שמכיר עבודה עם אנשים ויודע להחזיק משימה.",
+    returnGreeting: "היי, יש לך כמה דקות?",
     choices: [
-      { title: "אולי פשוט נשלח מייל?", reply: "מייל?! בלי הכנה? אני אוהבת את רוח ההרפתקנות שלך.", hours: 1, cost: 0, effects: { happiness: 8, energy: 4 } },
-      { title: "אני אביא עוגיות לישיבה", reply: "מעולה, עכשיו יש לישיבה תוצר מדיד.", hours: 1, cost: 20, effects: { food: 20, happiness: 8 } },
-      { title: "אכין מצגת על פחות מצגות", reply: "מרגש. תכין/י גם תקציר מנהלים וגרסה להדפסה.", hours: 2, cost: 0, effects: { happiness: 6 } }
+      { title: "איך נראה יום רגיל כאן?", reply: "תיאום, לקוחות, ולפעמים לפתור משהו שאף אחד לא צפה. לא משתעממים.", hours: 1, cost: 0, effects: { happiness: 8, energy: 4 } },
+      { title: "הבאתי משהו להפסקת הצוות", reply: "בדיוק בזמן. כולם במטבח, בוא/י להכיר.", hours: 1, cost: 20, effects: { food: 20, happiness: 8 } },
+      { title: "אפשר לעבור איתך על קורות החיים?", reply: "כן. נתחיל במה שכבר עשית, גם ניסיון בבית קפה נחשב.", hours: 2, cost: 0, effects: { happiness: 6 } }
     ]
   },
   tech: {
-    name: "באגי", role: "מפתח בכיר בתירוצים יצירתיים", color: "#8e85c5", skin: "#e6b78d", hair: "#453945", style: "headphones", prop: "laptop",
-    greeting: "אצלי זה עובד. אצלי גם הטוסטר מריץ גרסת בטא.",
-    returnGreeting: "שוב כאן? מעולה, בדיוק תיקנתי באג שיצר שני חברים חדשים.",
+    name: "באגי", role: "מפתח בצוות פיקסל", creature: RESIDENT_CREATURES.tech,
+    greeting: "בדיוק העלינו גרסה. אני צריך קצת אוויר לפני שאני פותח שוב את המחשב.",
+    returnGreeting: "היי! איך מתקדם?",
     choices: [
-      { title: "ניסית לכבות ולהדליק?", reply: "את המחשב או את הקריירה? כי לשניהם יש עדכון ממתין.", hours: 1, cost: 0, effects: { happiness: 8 } },
-      { title: "ניקח הפסקה בלי מסכים", reply: "סגור. רגע, אני מוריד אפליקציה להפסקות בלי מסכים.", hours: 2, cost: 0, effects: { energy: 15, happiness: 5 } },
-      { title: "נקרא לבאג פיצ׳ר?", reply: "כבר הכנתי לו דף נחיתה ושלוש חבילות מנוי.", hours: 1, cost: 0, effects: { happiness: 7 } }
+      { title: "איך נכנסת לתחום?", reply: "למדתי בערבים ועבדתי ביום. הפרויקט הראשון שלי היה קטן, אבל סיימתי אותו. זה מה שעזר בראיון.", hours: 1, cost: 0, effects: { happiness: 8 } },
+      { title: "בוא נצא להליכה בלי מסכים", reply: "סגור. עד הפארק וחזרה. אני משאיר את הלפטופ כאן.", hours: 2, cost: 0, effects: { energy: 15, happiness: 5 } },
+      { title: "מה אתם מחפשים במועמדים?", reply: "בסיס טוב וניסיון אמיתי. תסתכל/י על הדרישות בעמדת הקבלה, יש מסלול גם לתפקיד ראשון.", hours: 1, cost: 0, effects: { happiness: 7 } }
     ]
   },
   bank: {
-    name: "שקלר", role: "יועץ השקעות ואספן מהדקים", color: "#71998a", skin: "#e0ad83", hair: "#6d5c4b", style: "glasses", prop: "coin",
-    greeting: "הכסף שלך עובד בשבילך. כרגע הוא בהפסקת צהריים.",
-    returnGreeting: "ברוך שובך! הכנתי לך כיסא בריבית משתנה.",
+    name: "שקלר", role: "יועץ בבנק השכונתי", creature: RESIDENT_CREATURES.bank,
+    greeting: "לפני הכול: להשאיר מספיק לשכירות. אחר כך נדבר על חיסכון.",
+    returnGreeting: "בוא/י נשב רגע.",
     choices: [
-      { title: "אפשר לפתוח חיסכון לשנ״צ?", reply: "בהחלט. הריבית נצברת בחלומות.", hours: 1, cost: 0, effects: { happiness: 7, energy: 4 } },
-      { title: "אעזור לך למיין את המהדקים", reply: "מושלם! הרגע חסכת לי יועץ ארגוני. מגיע לך תשלום קטן.", hours: 2, cost: -30, effects: { energy: -5, happiness: 3 } },
-      { title: "יש עמלה על השאלה הזאת?", reply: "לא, אבל על התשובה... סתם, סתם. אפילו לי יש חוש הומור.", hours: 1, cost: 0, effects: { happiness: 8 } }
+      { title: "אני בלחץ מההוצאות", reply: "נעשה רשימה קצרה. כשמפרידים בין הוצאה קבועה לקנייה שאפשר לדחות, הדברים נראים אחרת.", hours: 1, cost: 0, effects: { happiness: 7, energy: 4 } },
+      { title: "עדיין צריך עזרה בסידור הארכיון?", reply: "כן, לשעתיים. התשלום קטן, אבל אפשר להתחיל עכשיו.", hours: 2, cost: -30, effects: { energy: -5, happiness: 3 } },
+      { title: "הלוואה תעזור לי להתקדם?", reply: "היא נותנת מזומן, לא הון. צריך להחזיר אותה עם ריבית. תבדוק/י קודם איך תחזיר/י.", hours: 1, cost: 0, effects: { happiness: 8 } }
     ]
   },
   market: {
-    name: "סימה בשקית", role: "יודעת מה חסר לך לפני המקרר", color: "#d29559", skin: "#bc805c", hair: "#49382f", style: "bun", prop: "apple",
-    greeting: "העגבניות היום במבצע: קונים שתיים, מקבלים עצה לחיים.",
-    returnGreeting: "ידעתי שתחזור/י. הבננות שאלו עליך.",
+    name: "סימה", role: "בעלת המכולת", creature: RESIDENT_CREATURES.market,
+    greeting: "כריכים יש ליד הקופה. אם חסר אוכל בבית, סל מצרכים יוצא יותר משתלם.",
+    returnGreeting: "היי, המשלוח הגיע עכשיו.",
     choices: [
-      { title: "מה העצה של העגבניות?", reply: "לא לקחת הכול ללב. במיוחד אם מתכננים להיות רוטב.", hours: 1, cost: 0, effects: { happiness: 8 } },
-      { title: "אעזור לסדר את מדף הפירות", reply: "תודה! קח/י פרי. הבננה הזאת התקבלה לעבודה בלי ראיון.", hours: 2, cost: 0, effects: { food: 28, energy: -4, happiness: 4 } },
-      { title: "באתי רק בשביל דבר אחד", reply: "ברור. גם אני פתחתי את המכולת רק בשביל חלב.", hours: 1, cost: 0, effects: { happiness: 6 } }
+      { title: "מה חדש ברחוב?", reply: "בקפה מחפשים עובדים ובקמפוס נפתח מחזור חדש. אנשים פה לא עומדים במקום.", hours: 1, cost: 0, effects: { happiness: 8 } },
+      { title: "אעזור לסדר את מדף הפירות", reply: "תודה. קח/י משהו לאכול לפני שיוצאים, לא עובדים על בטן ריקה.", hours: 2, cost: 0, effects: { food: 28, energy: -4, happiness: 4 } },
+      { title: "באתי להגיד שלום", reply: "איזה כיף. רוב האנשים כבר מזמינים הכול בטלפון, טוב שעוד עוצרים לדבר.", hours: 1, cost: 0, effects: { happiness: 6 } }
     ]
   },
   shop: {
-    name: "זיק פיקס", role: "משדרג גם דברים שעובדים", color: "#bc88a7", skin: "#edbc94", hair: "#6b4585", style: "quiff", prop: "phone",
-    greeting: "המכשיר החדש עושה הכול! חוץ מלחסוך לך כסף על המכשיר החדש.",
-    returnGreeting: "יש עדכון חדש. הוא מתקן את העדכון שתיקן את העדכון.",
+    name: "זיק", role: "מוכר ומתקן בעדכני", creature: RESIDENT_CREATURES.shop,
+    greeting: "מחפש/ת ציוד לעבודה או משהו לדרך? יש מחשבים ואופניים, בלי חבילות מיותרות.",
+    returnGreeting: "אהלן, מה צריך היום?",
     choices: [
-      { title: "יש מטען למוטיבציה?", reply: "כן, אבל החיבור לא תואם לימי ראשון.", hours: 1, cost: 0, effects: { happiness: 8, energy: 3 } },
-      { title: "נעשה סלפי עם הטוסטר החכם", reply: "תגידו צ׳יז! לא אתה, טוסטר. לא שוב.", hours: 1, cost: 0, effects: { happiness: 9 } },
-      { title: "אעזור לך לבדוק את רמקול ההדגמה", reply: "בדיקה, בדיקה... השכנים אישרו שהוא עובד.", hours: 2, cost: -25, effects: { energy: -4, happiness: 3 } }
+      { title: "מה עדיף לקנות קודם?", reply: "אופניים אם צריך הכנסה מהירה ממשלוחים. מחשב אם הכיוון הוא לימודים ועבודה מהבית.", hours: 1, cost: 0, effects: { happiness: 8, energy: 3 } },
+      { title: "תראה לי על מה אתה עובד", reply: "משפץ מחשב ישן. לפעמים החלק הכי טוב בעבודה זה להחזיר משהו לחיים.", hours: 1, cost: 0, effects: { happiness: 9 } },
+      { title: "צריך עזרה בבדיקת הציוד?", reply: "כן. יש כמה רמקולים לבדוק לפני הסגירה. אשלם לך על הזמן.", hours: 2, cost: -25, effects: { energy: -4, happiness: 3 } }
     ]
   },
   park: {
-    name: "מוטי יוגה", role: "מורה לנשימה וסגן של היונים", color: "#76a985", skin: "#d49c73", hair: "#a69d8c", style: "beard", prop: "bird",
-    greeting: "שאיפה, נשיפה... רגע, מי חנה לי על הצ׳אקרה?",
-    returnGreeting: "היונים שמרו לך מקום. הן גם הצביעו בעד העלאת דמי הפירורים.",
+    name: "מוטי", role: "מדריך בפארק", creature: RESIDENT_CREATURES.park,
+    greeting: "לא חייבים לרוץ. יש מקום על הדשא, והקבוצה מתחילה עוד מעט.",
+    returnGreeting: "טוב שיצאת קצת החוצה.",
     choices: [
-      { title: "ננסה את תנוחת העובד בחופשה", reply: "מצוין. שוכבים, נושמים, ולא עונים למייל. למתקדמים בלבד.", hours: 2, cost: 0, effects: { energy: 18, happiness: 7 } },
-      { title: "אבקש עצה מהיונה", reply: "היא אומרת: לפרוש כנפיים, ולא לשכוח איפה השארת את הסנדוויץ׳.", hours: 1, cost: 0, effects: { happiness: 9 } },
-      { title: "נשתה שייק ירוק?", reply: "הוא בטעם דשא, אבל דשא עם חזון.", hours: 1, cost: 20, effects: { food: 20, energy: 8, happiness: 3 } }
+      { title: "אפשר להצטרף לתרגול?", reply: "בטח. נתחיל לאט, עשרים דקות בלי לחשוב על מה שנשאר לעשות.", hours: 2, cost: 0, effects: { energy: 18, happiness: 7 } },
+      { title: "אני מרגיש/ה שכולם מתקדמים יותר מהר", reply: "את/ה רואה רק את מה שהם מראים. בוא/י נעשה סיבוב, יש לך גם הישגים משלך.", hours: 1, cost: 0, effects: { happiness: 9 } },
+      { title: "נשתה משהו אחרי האימון?", reply: "יש דוכן ליד השער. אני בא איתך.", hours: 1, cost: 20, effects: { food: 20, energy: 8, happiness: 3 } }
     ]
   },
   gym: {
-    name: "רוני שרירוני", role: "מרים משקולות ואת מצב הרוח", color: "#cf806c", skin: "#d8a078", hair: "#57403a", style: "headband", prop: "weight",
-    greeting: "עוד חזרה אחת! אני אומר את זה כבר שבע חזרות, אבל הפעם באמת.",
-    returnGreeting: "הנה האלוף/ה! אפילו המשקולות חייכו. או שזה היה החלודה.",
+    name: "רוני", role: "מאמן בסטודיו", creature: RESIDENT_CREATURES.gym,
+    greeting: "איך הגוף היום? נתאים את האימון למה שיש, לא למה שכתוב בתוכנית.",
+    returnGreeting: "כיף לראות התמדה.",
     choices: [
-      { title: "הרמתי היום את עצמי מהמיטה", reply: "שיא אישי! נרשום את זה באפליקציה לפני שהיא תבקש מנוי.", hours: 1, cost: 0, effects: { happiness: 8 } },
-      { title: "נעשה אימון לצחוק?", reply: "שלושה סטים של חה־חה. לא לשכוח לשתות בין הבדיחות.", hours: 2, cost: 0, effects: { energy: 12, happiness: 10 } },
-      { title: "אפשר יום רגליים בישיבה?", reply: "אפשר. קוראים לזה יום כיסא. יש לנו מאמן מומחה.", hours: 1, cost: 0, effects: { energy: 8, happiness: 5 } }
+      { title: "הגעתי, למרות שלא היה לי כוח", reply: "זה מספיק להתחלה. נעשה חימום ונראה איך מרגיש.", hours: 1, cost: 0, effects: { happiness: 8 } },
+      { title: "נעשה אימון קל ביחד?", reply: "בשמחה. בלי שיאים היום, רק לזוז קצת ולצאת יותר טוב ממה שנכנסנו.", hours: 2, cost: 0, effects: { energy: 12, happiness: 10 } },
+      { title: "אני צריך/ה יום התאוששות", reply: "בחירה טובה. מתיחות, מים ושינה. האימון הבא לא בורח.", hours: 1, cost: 0, effects: { energy: 8, happiness: 5 } }
     ]
   }
 };

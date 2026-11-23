@@ -30,7 +30,8 @@ export function createGame(difficulty = "relaxed", rival = false) {
     energy: 85, food: 75, happiness: 40, education: 0, lessons: 0, experience: 0,
     job: null, location: "home", inventory: { laptop: false, bike: false, groceries: 2 },
     housing: "basic", rent: 450, economy: 1, rivalProgress: 0, won: false,
-    encounters: {}, cafeOrder: null, cafeServed: 0, courier: null,
+    encounters: {}, cafeOrder: null, cafeServed: 0, courier: null, news: [],
+    opponent: rival ? createGame(difficulty, false) : null, rivalReplay: [],
     log: ["ברוכים הבאים לשכונה! כדאי להתחיל בקפה פינה: להגיש מועמדות ולעבוד במשמרת הראשונה."]
   };
 }
@@ -40,6 +41,7 @@ export const money = n => `${Math.round(n).toLocaleString("he-IL")} ₪`;
 const duration = n => n === 1 ? "שעה" : n === 2 ? "שעתיים" : `${n} שעות`;
 export const netWorth = s => s.cash + s.savings - s.debt;
 export const career = s => s.job ? JOBS[s.job].tier : 0;
+export const raceOver = s => s.won || Boolean(s.opponent?.won);
 export function progress(s) {
   const goal = GOALS[s.difficulty];
   return [
@@ -120,8 +122,11 @@ export function actionsFor(s, place = s.location) {
 }
 
 export function unavailable(s, action) {
+  if (s.online?.waiting) return "ממתינים לשחקן השני";
+  if (s.online?.ready) return "השבוע הסתיים מבחינתך — מחכים ליריב";
+  if (s.online && action.id === "gig") return "משלוחי רכיבה זמינים כרגע במשחק המקומי בלבד";
   if (s.courier) return "צריך לסיים קודם את המשלוח.";
-  if (s.won) return "המסלול הושלם! אפשר להתחיל משחק חדש.";
+  if (raceOver(s)) return "המרוץ הסתיים! אפשר להתחיל משחק חדש.";
   if (s.cafeOrder) return "קודם צריך להגיש את ההזמנה שמחכה במכונת הקפה.";
   if (action.requirement) return action.requirement;
   if (s.hours < action.hours) return "אין מספיק זמן השבוע";
@@ -211,7 +216,7 @@ export function ride(state, command, now = Date.now()) {
 }
 
 export function mixCoffee(state, ingredient) {
-  if (state.won || state.location !== "cafe" || !state.cafeOrder) return { state, error: "אין הזמנה פעילה בבית הקפה." };
+  if (raceOver(state) || state.location !== "cafe" || !state.cafeOrder) return { state, error: "אין הזמנה פעילה בבית הקפה." };
   if (ingredient !== "clear" && !Object.hasOwn(INGREDIENTS, ingredient)) return { state, error: "המרכיב אינו מוכר." };
   if (ingredient !== "clear" && state.cafeOrder.ingredients.length >= 4) return { state, error: "הכוס מלאה. אפשר לרוקן אותה או להגיש." };
   const s = structuredClone(state);
@@ -221,7 +226,7 @@ export function mixCoffee(state, ingredient) {
 }
 
 export function serveCoffee(state) {
-  if (state.won || state.location !== "cafe" || !state.cafeOrder) return { state, error: "אין הזמנה פעילה להגשה." };
+  if (raceOver(state) || state.location !== "cafe" || !state.cafeOrder) return { state, error: "אין הזמנה פעילה להגשה." };
   const recipe = COFFEE_RECIPES[state.cafeOrder.recipe];
   const correct = recipe.order.length === state.cafeOrder.ingredients.length && recipe.order.every((id, i) => id === state.cafeOrder.ingredients[i]);
   const s = structuredClone(state);
@@ -237,7 +242,7 @@ export function serveCoffee(state) {
 
 export function travel(state, destination) {
   if (state.courier) return { state, error: "צריך לסיים קודם את המשלוח." };
-  if (state.won) return { state, error: "המסלול הושלם!" };
+  if (raceOver(state)) return { state, error: "המרוץ הסתיים!" };
   if (state.cafeOrder) return { state, error: "הלקוח מחכה לקפה. צריך להגיש את ההזמנה לפני שיוצאים." };
   let hours;
   try { hours = travelCost(state, destination); }
@@ -253,7 +258,7 @@ export function travel(state, destination) {
 
 export function endWeek(state, random = Math.random) {
   if (state.courier) return { state, error: "צריך לסיים קודם את המשלוח." };
-  if (state.won) return { state, error: "המסלול הושלם!" };
+  if (raceOver(state)) return { state, error: "המרוץ הסתיים!" };
   if (state.cafeOrder) return { state, error: "צריך להגיש את ההזמנה לפני שמסיימים את השבוע." };
   const s = structuredClone(state);
   const interest = Math.floor(s.savings * .01);
@@ -278,24 +283,85 @@ export function endWeek(state, random = Math.random) {
     foodText = "בלי מצרכים, סוף השבוע היה רעב יותר: 15− שובע ו־5− אושר.";
   }
   s.energy = clamp(s.energy + 45);
-  const events = [
-    { title: "הופעה חינמית בשכונה! יצאת לרקוד עם החברים.", happiness: 8, cash: 0 },
-    { title: "החזר קטן על חיוב כפול. לפעמים שווה לבדוק את החשבון.", happiness: 2, cash: 90 },
-    { title: "סוף שבוע שקט עם ספר טוב. גם זה הישג.", happiness: 5, cash: 0 },
-    { title: "מפגש שכנים בגינה. מסתבר שיש פה אנשים ממש נחמדים.", happiness: 7, cash: 0 },
-    { title: "תקלה בטלפון עלתה 80 ₪. התיקון שלא תכננת.", happiness: -4, cash: -80 }
-  ];
+  const events = WEEKLY_NEWS;
   const event = events[Math.min(events.length - 1, Math.max(0, Math.floor(random() * events.length)))];
   if (s.cash + event.cash < 0) { s.debt -= s.cash + event.cash; s.cash = 0; }
   else s.cash += event.cash;
   s.happiness = clamp(s.happiness + event.happiness);
   s.economy = Math.round((.9 + random() * .2) * 100) / 100;
-  s.rivalProgress = s.rival ? Math.min(95, s.rivalProgress + 2 + random() * 3) : 0;
+  s.rivalProgress = 0;
   s.hours = 60;
   s.week++;
+  s.news = [{ id: event.id, week: s.week, economy: s.economy }, ...(s.news || [])].slice(0, 12);
   const message = `שבוע ${s.week} מתחיל · שכירות ${money(s.rent)}${unpaid ? ` · ${money(unpaid)} שלא כוסו נוספו לחוב` : ""}`;
   const result = record(s, message);
+  if (s.opponent && !s.won) {
+    const turn = playOpponentWeek(s.opponent);
+    s.opponent = turn.state;
+    s.rivalReplay = turn.replay;
+  }
   return { ...result, report: { title: `סוף שבוע ${s.week - 1}`, rent: s.rent, interest, debtInterest, unpaid, foodText, event: event.title, economy: s.economy } };
+}
+
+export function playOpponentWeek(initial) {
+  if (initial.rival || initial.opponent) throw new Error("יריב לא יכול לנהל יריב נוסף.");
+  let state = initial;
+  const replay = [];
+  const capture = (kind, id, message) => replay.push({
+    kind, id, message, location: state.location, week: state.week,
+    hours: state.hours, cash: state.cash, energy: state.energy, food: state.food,
+    happiness: state.happiness, education: state.education, career: career(state)
+  });
+  capture("start", "", "דני יוצא לשבוע שלו");
+  for (let step = 0; step < 70 && !state.won; step++) {
+    const goal = GOALS[state.difficulty];
+    const candidates = [];
+    const want = (place, id) => candidates.push([place, id]);
+    if (state.food < 28) {
+      if (state.inventory.groceries) want("home", "cook");
+      want("cafe", "meal");
+      want("market", "snack");
+      want("park", "community");
+    }
+    if (state.energy < 34) want("home", "rest");
+    for (const [id, job] of Object.entries(JOBS).reverse()) {
+      if (job.tier > career(state) && state.education >= job.education && state.experience >= job.experience)
+        want(job.place, `apply-${id}`);
+    }
+    if (state.cash < state.rent + 600 && state.job) want(JOBS[state.job].place, "work");
+    if (state.education < goal.education && state.cash >= state.rent + 300) want("college", "study");
+    if (netWorth(state) >= goal.wealth && state.education >= goal.education && career(state) >= goal.career)
+      want("park", "walk");
+    if (state.inventory.groceries <= 1 && state.cash > state.rent + 100) want("market", "groceries");
+    if (state.job) want(JOBS[state.job].place, "work");
+    want("home", "rest");
+    want("park", "walk");
+    let moved = false;
+    for (const [place, id] of candidates) {
+      const trip = travel(state, place);
+      if (trip.error) continue;
+      const action = actionsFor(trip.state).find(a => a.id === id);
+      if (!action || unavailable(trip.state, action)) continue;
+      if (place !== state.location) {
+        state = trip.state;
+        capture("travel", place, trip.message);
+      }
+      const result = perform(state, id);
+      if (result.error) throw new Error(`פעולת יריב נכשלה: ${result.error}`);
+      state = result.state;
+      capture("action", id, result.message);
+      moved = true;
+      break;
+    }
+    if (!moved) break;
+  }
+  if (!state.won) {
+    const result = endWeek(state, () => .5);
+    if (result.error) throw new Error(`סיום שבוע היריב נכשל: ${result.error}`);
+    state = result.state;
+    capture("settle", "", result.message);
+  }
+  return { state, replay };
 }
 
 export function parseSave(raw) {
@@ -326,6 +392,10 @@ export function parseSave(raw) {
         !Number.isInteger(o.stop) || !courierStops[o.stop]) fail();
   }
   if (s.cafeServed === undefined) s.cafeServed = 0;
+  if (s.news === undefined) s.news = [];
+  if (!Array.isArray(s.news) || s.news.length > 12 || s.news.some(entry =>
+    !entry || !WEEKLY_NEWS.some(item => item.id === entry.id) || !Number.isInteger(entry.week) ||
+    entry.week < 2 || entry.week > s.week || !Number.isFinite(entry.economy) || entry.economy < .9 || entry.economy > 1.1)) fail();
   if (!s.encounters || Array.isArray(s.encounters) || typeof s.encounters !== "object") fail();
   for (const [place, encounter] of Object.entries(s.encounters)) {
     if (!Object.hasOwn(CHARACTERS, place) || !encounter || !Number.isInteger(encounter.week) ||
@@ -338,7 +408,29 @@ export function parseSave(raw) {
       !Number.isInteger(s.cafeOrder.recipe) || !COFFEE_RECIPES[s.cafeOrder.recipe] ||
       !Array.isArray(s.cafeOrder.ingredients) || s.cafeOrder.ingredients.length > 4 ||
       !s.cafeOrder.ingredients.every(id => typeof id === "string" && Object.hasOwn(INGREDIENTS, id)))) fail();
+  if (s.opponent === undefined) s.opponent = s.rival ? createGame(s.difficulty, false) : null;
+  if (s.rivalReplay === undefined) s.rivalReplay = [];
+  if (s.opponent !== null) {
+    if (!s.rival || typeof s.opponent !== "object" || s.opponent.rival !== false ||
+        s.opponent.opponent !== null || s.opponent.difficulty !== s.difficulty ||
+        s.opponent.cafeOrder || s.opponent.courier ||
+        !Array.isArray(s.opponent.rivalReplay) || s.opponent.rivalReplay.length) fail();
+    s.opponent = parseSave(JSON.stringify(s.opponent));
+  } else if (s.rival) fail();
+  if (!Array.isArray(s.rivalReplay) || s.rivalReplay.length > 142 || (!s.rival && s.rivalReplay.length)) fail();
+  for (const frame of s.rivalReplay) {
+    if (!frame || !["start", "travel", "action", "settle"].includes(frame.kind) ||
+        typeof frame.id !== "string" || frame.id.length > 40 ||
+        typeof frame.message !== "string" || frame.message.length > 600 ||
+        !PLACES.some(p => p.id === frame.location)) fail();
+    for (const key of ["week", "hours", "cash", "energy", "food", "happiness", "education", "career"])
+      if (!Number.isFinite(frame[key]) || frame[key] < 0) fail();
+    if (!Number.isInteger(frame.week) || frame.week < 1 || frame.hours > 60 || frame.energy > 100 ||
+        frame.food > 100 || frame.happiness > 100 || !Number.isInteger(frame.education) ||
+        !Number.isInteger(frame.career) || frame.career > 4) fail();
+  }
   s.won = progress(s).every(g => g.percent >= 100);
   return s;
 }
 import { CHARACTERS, COFFEE_RECIPES, INGREDIENTS } from "./characters.js";
+import { WEEKLY_NEWS } from "./city-news.js";

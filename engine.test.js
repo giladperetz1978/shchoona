@@ -1,8 +1,174 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createGame, actionsFor, perform, travel, travelCost, endWeek, parseSave, progress, netWorth, JOBS, GOALS, mixCoffee, serveCoffee } from "./engine.js";
-import { CHARACTERS, COFFEE_RECIPES } from "./characters.js";
+import { createGame, actionsFor, perform, travel, travelCost, endWeek, parseSave, progress, netWorth, JOBS, GOALS, mixCoffee, serveCoffee, playOpponentWeek, raceOver, career } from "./engine.js";
+import { CHARACTERS, COFFEE_RECIPES, INGREDIENTS } from "./characters.js";
 import { ride, courierTarget } from "./engine.js";
+import { CITY_SITES, canWalk, walkingRoute } from "./city-layout.js";
+import { activityFor, activityStage } from "./city-activities.js";
+import { CREATURES, creaturePortrait } from "./creatures.js";
+import { characterArt } from "./art.js";
+import { newsFor } from "./city-news.js";
+
+test("news reflects applied weekly effects, persists without replaying rewards and migrates old saves", () => {
+  const start = createGame(), { state } = endWeek(start, () => .25);
+  assert.equal(state.cash, start.cash - start.rent + 90);
+  assert.equal(state.happiness, start.happiness - 3 + 2);
+  assert.equal(newsFor(state.news[0]).cash, 90);
+  assert.equal(state.news[0].economy, state.economy);
+  assert.deepEqual(parseSave(JSON.stringify(state)), state);
+  const old = structuredClone(start); delete old.news;
+  assert.deepEqual(parseSave(JSON.stringify(old)).news, []);
+  const bad = structuredClone(state); bad.news[0].id = "constructor";
+  assert.throws(() => parseSave(JSON.stringify(bad)));
+});
+
+test("resident and extra creature portraits preserve distinctive eyes across dialogue moods", () => {
+  const portraits = new Set();
+  for (const [id, design] of Object.entries(CREATURES)) {
+    for (const mood of ["idle", "happy", "surprised"]) {
+      const svg = creaturePortrait(id, mood);
+      assert.equal([...svg.matchAll(/class="toon-eyes"/g)].length, design.eyes, `${id}: ${mood}`);
+      assert.ok(svg.includes(`aria-label="${design.name}"`));
+      assert.ok(svg.includes(`toon-${mood}`));
+      assert.doesNotMatch(svg, /undefined|NaN|Infinity/);
+    }
+    portraits.add(creaturePortrait(id));
+  }
+  assert.equal(portraits.size, Object.keys(CREATURES).length);
+  for (const [place, character] of Object.entries(CHARACTERS))
+    assert.equal(characterArt(place, "happy"), creaturePortrait(character.creature, "happy"));
+  assert.throws(() => creaturePortrait("constructor"));
+  assert.throws(() => creaturePortrait("missing"));
+});
+
+test("every offered gameplay command and coffee control has an embodied activity", () => {
+  const initial = createGame(), before = structuredClone(initial);
+  for (const location of Object.keys(CHARACTERS)) {
+    for (const job of [null, ...Object.keys(JOBS)]) {
+      const state = { ...initial, location, job };
+      for (const action of actionsFor(state)) {
+        const clip = activityFor(action.id, location);
+        if (action.id === "gig") assert.equal(clip.interactive, true);
+        else {
+          assert.ok(clip.pose && clip.prop, `${location}: ${action.id} has a pose and physical props`);
+          assert.ok(clip.seconds > 0 && clip.seconds <= 5);
+          assert.equal(activityStage(clip, 0).progress, 0);
+          assert.equal(activityStage(clip, clip.seconds).progress, 1);
+        }
+      }
+    }
+  }
+  for (const id of [...Object.keys(INGREDIENTS).map(id => `mix-${id}`), "mix-clear", "serve-coffee"])
+    assert.ok(activityFor(id, "cafe").pose);
+  assert.deepEqual(initial, before);
+  assert.notEqual(activityFor("work", "cafe").pose, activityFor("friends", "cafe").pose);
+  assert.notEqual(activityFor("work", "cafe").prop, activityFor("work", "office").prop);
+});
+
+test("activity stages finish at the exact duration and reject unknown commands or invalid time", () => {
+  const clip = activityFor("friends", "cafe");
+  assert.equal(activityStage(clip, clip.seconds / 3).label, clip.stages[1]);
+  assert.equal(activityStage(clip, clip.seconds - .001).progress < 1, true);
+  assert.deepEqual(activityStage(clip, clip.seconds + 10), { progress: 1, label: clip.stages[2] });
+  for (const id of ["missing", "constructor", "talk-9", "apply-unknown"])
+    assert.throws(() => activityFor(id, "cafe"), /אין סצנת ביצוע/);
+  for (const time of [-1, NaN, Infinity]) assert.throws(() => activityStage(clip, time));
+});
+
+test("opponent replay is reproducible exclusively through legal actions and weekly settlement", () => {
+  const initial = createGame("relaxed", true);
+  const before = structuredClone(initial);
+  const result = endWeek(initial, () => .5);
+  assert.deepEqual(initial, before);
+  let opponent = initial.opponent;
+  for (const frame of result.state.rivalReplay) {
+    let applied;
+    if (frame.kind === "travel") applied = travel(opponent, frame.id);
+    if (frame.kind === "action") applied = perform(opponent, frame.id);
+    if (frame.kind === "settle") applied = endWeek(opponent, () => .5);
+    if (applied) { assert.equal(applied.error, undefined); opponent = applied.state; }
+    for (const key of ["location", "week", "hours", "cash", "energy", "food", "happiness", "education"])
+      assert.equal(frame[key], opponent[key], `${frame.kind}: ${key}`);
+    assert.equal(frame.career, career(opponent));
+  }
+  assert.deepEqual(opponent, result.state.opponent);
+  assert.deepEqual(parseSave(JSON.stringify(result.state)), result.state);
+  assert.equal(result.state.week, 2);
+  assert.equal(result.state.opponent.week, 2);
+  assert.equal(result.state.cash, 950);
+});
+
+for (const difficulty of ["relaxed", "classic"]) test(`${difficulty}: a legal opponent can finish first and freeze the race`, () => {
+  let state = createGame(difficulty, true);
+  for (let week = 0; week < 30 && !raceOver(state); week++) {
+    const result = endWeek(state, () => .5);
+    assert.equal(result.error, undefined);
+    state = parseSave(JSON.stringify(result.state));
+  }
+  assert.equal(state.won, false);
+  assert.equal(state.opponent.won, true);
+  assert.ok(progress(state.opponent).every(goal => goal.percent === 100));
+  for (const result of [travel(state, "cafe"), perform(state, "rest"), endWeek(state)]) {
+    assert.ok(result.error);
+    assert.equal(result.state, state);
+  }
+});
+
+test("player victory does not give the opponent an extra turn", () => {
+  const state = createGame("relaxed", true);
+  Object.assign(state, { cash: 6000, happiness: 74, education: 3, job: "tech" });
+  const result = perform(state, "rest");
+  assert.equal(result.state.won, true);
+  assert.deepEqual(result.state.opponent, state.opponent);
+  assert.equal(endWeek(result.state).state, result.state);
+  assert.throws(() => playOpponentWeek(state), /יריב/);
+  state.cash += state.rent;
+  const settlement = endWeek(state, () => .5);
+  assert.equal(settlement.state.won, true);
+  assert.deepEqual(settlement.state.opponent, state.opponent);
+});
+
+test("competition saves migrate and reject malformed or recursive opponent data", () => {
+  const legacy = createGame("relaxed", true);
+  delete legacy.opponent; delete legacy.rivalReplay;
+  const migrated = parseSave(JSON.stringify(legacy));
+  assert.equal(migrated.cash, legacy.cash);
+  assert.equal(migrated.opponent.rival, false);
+  const valid = endWeek(migrated, () => .5).state;
+  const corruptions = [
+    state => { state.opponent.rival = true; },
+    state => { state.opponent.opponent = createGame(); },
+    state => { state.opponent.cash = -1; },
+    state => { state.opponent = null; },
+    state => { state.rivalReplay[0].location = "missing"; },
+    state => { state.rivalReplay[0].hours = 100; },
+    state => { state.rivalReplay[0].message = null; },
+    state => { state.rivalReplay = Array(143).fill(state.rivalReplay[0]); }
+  ];
+  for (const corrupt of corruptions) {
+    const state = structuredClone(valid); corrupt(state);
+    assert.throws(() => parseSave(JSON.stringify(state)));
+  }
+});
+
+test("city routes reach every entrance without crossing building collision or world bounds", () => {
+  const starts = [...CITY_SITES.map(site => ({ x: site.x, z: site.doorZ })), { x: 28, z: 30 }, { x: -28, z: -30 }];
+  for (const start of starts) for (let index = 0; index < CITY_SITES.length; index++) {
+    let from = start;
+    for (const to of walkingRoute(start, index)) {
+      for (let sample = 0; sample <= 100; sample++) {
+        const ratio = sample / 100;
+        assert.ok(canWalk(from.x + (to.x - from.x) * ratio, from.z + (to.z - from.z) * ratio));
+      }
+      from = to;
+    }
+    assert.deepEqual(from, { x: CITY_SITES[index].x, z: CITY_SITES[index].doorZ });
+  }
+  assert.equal(canWalk(0, -20), false);
+  assert.equal(canWalk(40, 0), false);
+  assert.equal(canWalk(7, 0, true), false);
+  assert.equal(canWalk(0, 4, true), true);
+});
 
 test("courier must collect and reach the customer before being paid once", () => {
   const initial = createGame();
